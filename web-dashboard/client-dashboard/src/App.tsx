@@ -2,6 +2,11 @@ import React, { useState } from 'react';
 import { MainLayout } from './layouts/MainLayout';
 import { DashboardOverviewPage } from './pages/DashboardOverviewPage';
 import { WhatsAppPage } from './pages/WhatsAppPage';
+import { ContactsPage } from './pages/ContactsPage';
+import { MyDevicesPage } from './pages/MyDevicesPage';
+import { CallsPage } from './pages/CallsPage';
+import { CallRecordingsPage } from './pages/CallRecordingsPage';
+import { SMSPage } from './pages/SMSPage';
 import { DeviceInfo, MetricSummary, ActivityEvent } from './types/dashboard.types';
 
 export default function App() {
@@ -116,6 +121,23 @@ export default function App() {
 
   const renderCurrentPage = () => {
     switch (activeTab) {
+      case 'recordings':
+        return <CallRecordingsPage device={currentDevice} />;
+      case 'sms':
+        return <SMSPage device={currentDevice} />;
+      case 'calls':
+        return <CallsPage device={currentDevice} />;
+      case 'devices':
+        return (
+          <MyDevicesPage
+            availableDevices={availableDevices}
+            currentDevice={currentDevice}
+            onSelectDevice={(dev) => setCurrentDevice(dev)}
+            onNavigateTab={(tabId) => setActiveTab(tabId)}
+          />
+        );
+      case 'contacts':
+        return <ContactsPage device={currentDevice} />;
       case 'whatsapp':
         return <WhatsAppPage device={currentDevice} />;
       case 'dashboard':

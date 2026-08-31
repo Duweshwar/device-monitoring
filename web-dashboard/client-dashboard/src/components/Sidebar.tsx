@@ -3,6 +3,7 @@ import {
   LayoutDashboard, 
   MapPin, 
   PhoneCall, 
+  Disc,
   MessageSquare, 
   Users, 
   Image as ImageIcon, 
@@ -46,7 +47,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
       items: [
         { id: 'dashboard', label: 'Dashboard Overview', icon: LayoutDashboard },
         { id: 'location', label: 'Live Location & GPS', icon: MapPin },
-        { id: 'calls', label: 'Call Logs & Recordings', icon: PhoneCall },
+        { id: 'calls', label: 'Call History', icon: PhoneCall },
+        { id: 'recordings', label: 'Call Recordings', icon: Disc },
         { id: 'sms', label: 'SMS Telemetry', icon: MessageSquare },
         { id: 'contacts', label: 'Contacts Inventory', icon: Users },
       ]
@@ -165,7 +167,20 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
 
         <button
-          onClick={() => onSelectTab('add_device')}
+          onClick={() => onSelectTab('devices')}
+          title={isCollapsed ? "My Devices / License" : ''}
+          className={`w-full flex items-center ${isCollapsed ? 'justify-center py-2' : 'gap-2.5 px-3 py-1.5'} rounded-lg text-xs font-medium transition-colors ${
+            activeTab === 'devices'
+              ? 'bg-indigo-600 text-white font-semibold'
+              : 'text-slate-300 hover:bg-slate-800/80 hover:text-slate-100'
+          }`}
+        >
+          <Smartphone className="w-4 h-4 text-slate-400 shrink-0" />
+          {!isCollapsed && <span>My Devices / License</span>}
+        </button>
+
+        <button
+          onClick={() => onSelectTab('devices')}
           title={isCollapsed ? "Add Device" : ''}
           className={`w-full flex items-center ${isCollapsed ? 'justify-center py-2' : 'gap-2.5 px-3 py-1.5'} rounded-lg text-xs text-slate-300 hover:bg-slate-800/80 hover:text-slate-100 transition-colors`}
         >
@@ -174,16 +189,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         </button>
 
         <button
-          onClick={() => onSelectTab('my_devices')}
-          title={isCollapsed ? "My Devices / License" : ''}
-          className={`w-full flex items-center ${isCollapsed ? 'justify-center py-2' : 'gap-2.5 px-3 py-1.5'} rounded-lg text-xs text-slate-300 hover:bg-slate-800/80 hover:text-slate-100 transition-colors`}
-        >
-          <Smartphone className="w-4 h-4 text-slate-400 shrink-0" />
-          {!isCollapsed && <span>My Devices / License</span>}
-        </button>
-
-        <button
-          onClick={() => onSelectTab('device_transfer')}
+          onClick={() => onSelectTab('devices')}
           title={isCollapsed ? "Device Transfer" : ''}
           className={`w-full flex items-center ${isCollapsed ? 'justify-center py-2' : 'gap-2.5 px-3 py-1.5'} rounded-lg text-xs text-slate-300 hover:bg-slate-800/80 hover:text-slate-100 transition-colors`}
         >
