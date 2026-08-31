@@ -40,8 +40,8 @@ export const RecentActivityFeed: React.FC<RecentActivityFeedProps> = ({ events, 
     <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs flex flex-col justify-between h-full">
       <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3">
         <div>
-          <h3 className="font-bold text-slate-900 text-sm">Real-Time Event Stream</h3>
-          <p className="text-xs text-slate-500">Live SSE Activity Log</p>
+          <h3 className="font-bold text-slate-900 text-sm">Recent Activity & Updates</h3>
+          <p className="text-xs text-slate-500">Latest live device activity stream</p>
         </div>
         <button
           onClick={onViewAll}
@@ -75,7 +75,7 @@ export const RecentActivityFeed: React.FC<RecentActivityFeedProps> = ({ events, 
       <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-xs text-slate-500">
         <span className="flex items-center gap-1.5">
           <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-          Listening to NestJS SSE Stream
+          <span>Live Activity Stream Active</span>
         </span>
         <span className="font-medium text-slate-700">6 Events Today</span>
       </div>
