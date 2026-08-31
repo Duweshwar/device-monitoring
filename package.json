@@ -1,0 +1,31 @@
+{
+  "name": "parantel-phone-monitoring",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Parental & Enterprise Phone Monitoring Platform Monorepo",
+  "workspaces": [
+    "backend",
+    "web-dashboard/client-dashboard",
+    "web-dashboard/admin-dashboard",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev:backend": "npm run start:dev --workspace=backend",
+    "dev:client": "npm run dev --workspace=web-dashboard/client-dashboard",
+    "dev:admin": "npm run dev --workspace=web-dashboard/admin-dashboard",
+    "dev:all": "concurrently -n \"backend,client,admin\" -c \"blue.bold,emerald.bold,purple.bold\" \"npm run dev:backend\" \"npm run dev:client\" \"npm run dev:admin\"",
+    "build:types": "npm run build --workspace=packages/shared-types",
+    "build:backend": "npm run build --workspace=backend",
+    "build:client": "npm run build --workspace=web-dashboard/client-dashboard",
+    "build:admin": "npm run build --workspace=web-dashboard/admin-dashboard",
+    "build:all": "npm run build:types && npm run build:backend && npm run build:client && npm run build:admin",
+    "db:migrate": "npm run db:migrate --workspace=backend",
+    "db:generate": "npm run db:generate --workspace=backend",
+    "docker:up": "docker-compose up -d",
+    "docker:down": "docker-compose down"
+  },
+  "devDependencies": {
+    "concurrently": "^10.0.5",
+    "typescript": "^5.3.3"
+  }
+}

