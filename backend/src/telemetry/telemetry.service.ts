@@ -207,6 +207,29 @@ export class TelemetryService {
           `.catch((e) => console.warn('[InstalledApp Table Upsert Warning]:', e.message));
         }
 
+        // 7. Populate Dedicated WebHistory Table in PostgreSQL via Raw Query
+        if (evt.source === 'web_history' && evt.payload) {
+          const title = evt.payload.title || evt.payload.domain || 'Web Page';
+          const url = evt.payload.url || evt.payload.domain || '';
+          let domain = evt.payload.domain || '';
+          if (!domain && url) {
+            try {
+              domain = new URL(url.startsWith('http') ? url : `https://${url}`).hostname;
+            } catch {
+              domain = url;
+            }
+          }
+          const visitCount = Number(evt.payload.visitCount || 1);
+          const ts = new Date(evt.payload.timestamp || evt.timestamp || Date.now());
+
+          if (url.trim().length > 0 || domain.trim().length > 0) {
+            await this.prisma.$executeRaw`
+              INSERT INTO "WebHistory" ("id", "deviceId", "title", "url", "domain", "visitCount", "timestamp", "createdAt")
+              VALUES (gen_random_uuid(), ${deviceId}, ${title}, ${url}, ${domain}, ${visitCount}, ${ts}, NOW());
+            `.catch((e) => console.warn('[WebHistory Table Insert Warning]:', e.message));
+          }
+        }
+
       } catch (err) {
         console.warn('[Telemetry DB Error]:', err);
         syncedIds.push(eventId);
@@ -444,25 +467,52 @@ export class TelemetryService {
     return Array.from(uniqueMap.values());
   }
 
-  // 7. Web History
+  // 7. Web History - Queries Dedicated WebHistory Table with Fallback
   async ingestWebHistory(deviceId: string, history: WebHistoryDto[]) {
     return { success: true, count: history.length };
   }
   async getWebHistory(deviceId: string) {
+    try {
+      const dedicated: any[] = await this.prisma.$queryRaw`
+        SELECT "id", "title", "url", "domain", "visitCount", "isBlocked", "timestamp"
+        FROM "WebHistory"
+        WHERE "deviceId" = ${deviceId}
+        ORDER BY "timestamp" DESC
+        LIMIT 200;
+      `;
+      if (dedicated && dedicated.length > 0) {
+        return dedicated.map((w) => ({
+          id: w.id,
+          title: w.title || w.domain || 'Web Page',
+          url: w.url,
+          domain: w.domain,
+          visitCount: w.visitCount || 1,
+          timestamp: new Date(w.timestamp).toLocaleString(),
+          isStarred: false,
+          isBlocked: Boolean(w.isBlocked)
+        }));
+      }
+    } catch (e) {
+      console.warn('[getWebHistory raw query error]:', e);
+    }
+
     const events = await this.prisma.normalizedEvent.findMany({
       where: { deviceId, source: 'web_history' },
       orderBy: { timestamp: 'desc' },
       take: 200
     });
+
     return events.map((evt) => {
       const p = (evt.payload as any) || {};
       return {
         id: evt.id,
-        title: p.title || 'Web Page',
+        title: p.title || p.domain || 'Web Page',
         url: p.url || '',
         domain: p.domain || '',
         visitCount: p.visitCount || 1,
-        timestamp: evt.timestamp
+        timestamp: new Date(evt.timestamp).toLocaleString(),
+        isStarred: false,
+        isBlocked: false
       };
     });
   }

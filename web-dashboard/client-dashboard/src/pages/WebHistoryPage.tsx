@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { apiService } from '../services/apiService';
 import { 
   Globe, 
   RefreshCw, 
@@ -41,68 +42,52 @@ interface ConfirmModalState {
 }
 
 export const WebHistoryPage: React.FC<WebHistoryPageProps> = ({ device }) => {
-  const [webHistory, setWebHistory] = useState<WebHistoryItem[]>([
+  const defaultHistory: WebHistoryItem[] = [
     {
       id: 'wh_1',
-      title: 'Python 3.12 Documentation & Advanced Agentic AI Guide',
-      url: 'https://docs.python.org/3/tutorial/agentic-ai-architecture.html',
-      domain: 'docs.python.org',
-      visitCount: 14,
-      timestamp: '31/08/2026 11:38 pm',
+      title: 'Google Search - Android Parental Monitoring',
+      url: 'https://www.google.com/search?q=parental+monitoring',
+      domain: 'google.com',
+      visitCount: 3,
+      timestamp: new Date().toLocaleString(),
       isStarred: true,
       isBlocked: false
-    },
-    {
-      id: 'wh_2',
-      title: 'GitHub Trending Repositories - Open Source Web Dashboards',
-      url: 'https://github.com/trending/typescript?since=daily',
-      domain: 'github.com',
-      visitCount: 8,
-      timestamp: '31/08/2026 10:18 pm',
-      isStarred: true,
-      isBlocked: false
-    },
-    {
-      id: 'wh_3',
-      title: 'Wikipedia - Cell Tower Triangulation & Mobile Telemetry',
-      url: 'https://en.wikipedia.org/wiki/Cell_tower_triangulation',
-      domain: 'wikipedia.org',
-      visitCount: 5,
-      timestamp: '31/08/2026 08:45 pm',
-      isStarred: false,
-      isBlocked: false
-    },
-    {
-      id: 'wh_4',
-      title: 'Online Gaming Zone - Free Flash & Arcade Games',
-      url: 'https://arcade-zone-unblocked-2026.net/play',
-      domain: 'arcade-zone-unblocked-2026.net',
-      visitCount: 22,
-      timestamp: '31/08/2026 06:12 pm',
-      isStarred: false,
-      isBlocked: true
-    },
-    {
-      id: 'wh_5',
-      title: 'Stack Overflow - React TypeScript Vite Build Optimizations',
-      url: 'https://stackoverflow.com/questions/789102/vite-build-performance',
-      domain: 'stackoverflow.com',
-      visitCount: 11,
-      timestamp: '31/08/2026 04:30 pm',
-      isStarred: false,
-      isBlocked: false
-    },
-    {
-      id: 'wh_6',
-      title: 'Social Media Network Portal',
-      url: 'https://restricted-social-hub.example.com/feed',
-      domain: 'restricted-social-hub.example.com',
-      visitCount: 34,
-      timestamp: '31/08/2026 02:15 pm',
-      isStarred: false,
-      isBlocked: true
     }
-  ]);
+  ];
+
+  const [webHistory, setWebHistory] = useState<WebHistoryItem[]>(defaultHistory);
+
+  // Poll live Web History telemetry from NestJS PostgreSQL backend
+  useEffect(() => {
+    let isMounted = true;
+    const fetchLiveHistory = async () => {
+      try {
+        const live = await apiService.getWebHistory(device.id, []);
+        if (isMounted && Array.isArray(live) && live.length > 0) {
+          const formatted: WebHistoryItem[] = live.map((w: any, i: number) => ({
+            id: w.id || `live_wh_${i}`,
+            title: w.title || w.domain || 'Web Page',
+            url: w.url || '',
+            domain: w.domain || (w.url ? new URL(w.url.startsWith('http') ? w.url : `https://${w.url}`).hostname : ''),
+            visitCount: w.visitCount || 1,
+            timestamp: new Date(w.timestamp || Date.now()).toLocaleString(),
+            isStarred: Boolean(w.isStarred),
+            isBlocked: Boolean(w.isBlocked)
+          }));
+          setWebHistory(formatted);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch live web history:', err);
+      }
+    };
+
+    fetchLiveHistory();
+    const interval = setInterval(fetchLiveHistory, 5000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [device.id]);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -138,7 +123,6 @@ export const WebHistoryPage: React.FC<WebHistoryPageProps> = ({ device }) => {
     setWebHistory(webHistory.map(w => w.id === id ? { ...w, isStarred: !w.isStarred } : w));
   };
 
-  {/* Block / Unblock Domain Confirmation Modal */}
   const requestToggleBlock = (item: WebHistoryItem) => {
     const isBlocking = !item.isBlocked;
     setConfirmModal({
@@ -156,7 +140,6 @@ export const WebHistoryPage: React.FC<WebHistoryPageProps> = ({ device }) => {
     });
   };
 
-  {/* Delete Selected Action Confirmation Modal */}
   const requestDeleteSelected = () => {
     if (selectedIds.length === 0) return;
     setConfirmModal({
@@ -173,7 +156,6 @@ export const WebHistoryPage: React.FC<WebHistoryPageProps> = ({ device }) => {
     });
   };
 
-  {/* Delete All Action Confirmation Modal */}
   const requestDeleteAll = () => {
     setConfirmModal({
       isOpen: true,
@@ -254,15 +236,14 @@ export const WebHistoryPage: React.FC<WebHistoryPageProps> = ({ device }) => {
           <p className="text-xs text-slate-500">Tracked web browsing logs, visited URLs, domain blocking, and search history for {device.alias}</p>
         </div>
         <span className="px-3 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full text-xs font-semibold">
-          Total Synced: 293 Entries
+          Total Synced: {webHistory.length} Entries
         </span>
       </div>
 
-      {/* Top Action Toolbar (OneMonitar Style Alignment) */}
+      {/* Top Action Toolbar */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           
-          {/* Action Buttons: Refresh, Delete, Delete All, Filter Dropdown */}
           <div className="flex flex-wrap items-center gap-2">
             <button 
               onClick={() => console.log('Refreshing internet history...')}
@@ -293,7 +274,6 @@ export const WebHistoryPage: React.FC<WebHistoryPageProps> = ({ device }) => {
               <span>Delete All</span>
             </button>
 
-            {/* History Filter Dropdown */}
             <select
               value={filterStatus}
               onChange={(e) => setFilterStatus(e.target.value)}
@@ -305,7 +285,6 @@ export const WebHistoryPage: React.FC<WebHistoryPageProps> = ({ device }) => {
             </select>
           </div>
 
-          {/* Search Box */}
           <div className="relative w-full sm:w-64">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
@@ -319,7 +298,6 @@ export const WebHistoryPage: React.FC<WebHistoryPageProps> = ({ device }) => {
 
         </div>
 
-        {/* Entries Selector */}
         <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
           <div className="flex items-center gap-2">
             <span>Show</span>
@@ -338,7 +316,6 @@ export const WebHistoryPage: React.FC<WebHistoryPageProps> = ({ device }) => {
           <span>Showing {filteredHistory.length} web history records</span>
         </div>
 
-        {/* Web History Data Table (OneMonitar Style Alignment) */}
         <div className="overflow-x-auto border border-slate-200 rounded-lg">
           <table className="w-full text-left border-collapse text-xs">
             <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
@@ -353,7 +330,7 @@ export const WebHistoryPage: React.FC<WebHistoryPageProps> = ({ device }) => {
                 </th>
                 <th className="p-3 w-14 text-center">Starred</th>
                 <th className="p-3 w-64 min-w-[220px]">Title</th>
-                <th className="p-3 w-72 min-w-[260px]">URL</th>
+                <th className="p-3 w-72 min-w-[260px]">URL / Domain</th>
                 <th className="p-3 text-center">Action</th>
                 <th className="p-3 text-right">Timestamp</th>
               </tr>
@@ -383,7 +360,7 @@ export const WebHistoryPage: React.FC<WebHistoryPageProps> = ({ device }) => {
                   </td>
                   <td className="p-3 w-72 min-w-[260px]">
                     <a
-                      href={item.url}
+                      href={item.url.startsWith('http') ? item.url : `https://${item.url}`}
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-sky-600 hover:text-sky-800 font-mono text-xs font-medium flex items-center gap-1 hover:underline truncate max-w-xs block"
@@ -394,7 +371,6 @@ export const WebHistoryPage: React.FC<WebHistoryPageProps> = ({ device }) => {
                     </a>
                   </td>
 
-                  {/* Dedicated Action Column (Block / Unblock Domain Button) */}
                   <td className="p-3 text-center">
                     <button
                       onClick={() => requestToggleBlock(item)}
@@ -425,21 +401,14 @@ export const WebHistoryPage: React.FC<WebHistoryPageProps> = ({ device }) => {
           </table>
         </div>
 
-        {/* Bottom Pagination */}
         <div className="flex items-center justify-between pt-2 text-xs text-slate-500">
-          <span>Showing 1 to {filteredHistory.length} of 293 web history records</span>
+          <span>Showing 1 to {filteredHistory.length} of {webHistory.length} web history records</span>
           <div className="flex items-center gap-1">
             <button className="px-2.5 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium disabled:opacity-50" disabled>
               Previous
             </button>
             <button className="px-3 py-1 rounded bg-indigo-600 text-white text-xs font-semibold">
               1
-            </button>
-            <button className="px-3 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium">
-              2
-            </button>
-            <button className="px-3 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium">
-              3
             </button>
             <button className="px-2.5 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium">
               Next

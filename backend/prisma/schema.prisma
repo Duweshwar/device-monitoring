@@ -125,6 +125,7 @@ model Device {
   contacts       Contact[]
   keylogs        Keylog[]
   installedApps  InstalledApp[]
+  webHistory     WebHistory[]
   mediaAssets    MediaAsset[]
   appRules       AppRestriction[]
   webRules       WebFilterRule[]
@@ -260,6 +261,22 @@ model InstalledApp {
 
   @@unique([deviceId, packageName])
   @@index([deviceId, timestamp])
+}
+
+model WebHistory {
+  id          String   @id @default(uuid())
+  deviceId    String
+  device      Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  title       String
+  url         String
+  domain      String
+  visitCount  Int      @default(1)
+  isBlocked   Boolean  @default(false)
+  timestamp   DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@index([deviceId, timestamp])
+  @@index([deviceId, domain])
 }
 
 model MediaAsset {

