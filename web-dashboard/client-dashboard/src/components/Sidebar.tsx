@@ -6,6 +6,7 @@ import {
   Disc,
   MessageSquare, 
   Users, 
+  Calendar as CalendarIcon,
   Image as ImageIcon, 
   Camera, 
   Key, 
@@ -14,6 +15,7 @@ import {
   Radio, 
   ShieldAlert, 
   Lock, 
+  AppWindow,
   Sliders, 
   Smartphone,
   PlusCircle,
@@ -51,6 +53,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         { id: 'recordings', label: 'Call Recordings', icon: Disc },
         { id: 'sms', label: 'SMS Telemetry', icon: MessageSquare },
         { id: 'contacts', label: 'Contacts Inventory', icon: Users },
+        { id: 'calendar', label: 'Calendar Events', icon: CalendarIcon },
       ]
     },
     {
@@ -81,7 +84,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       title: 'POLICIES & MDM',
       items: [
-        { id: 'appblock', label: 'App Blocker & Limits', icon: Lock },
+        { id: 'appblock', label: 'Installed Applications', icon: AppWindow },
         { id: 'geofence', label: 'Geofence Radius Rules', icon: ShieldAlert },
         { id: 'settings', label: 'Device Policy Settings', icon: Sliders },
       ]
@@ -95,12 +98,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
       <div className={`p-4 border-b border-slate-800 flex items-center justify-between ${isCollapsed ? 'justify-center px-2' : ''}`}>
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-9 h-9 rounded-lg bg-indigo-600 flex items-center justify-center text-white shadow-md font-bold text-lg shrink-0">
-            P
+            C
           </div>
           {!isCollapsed && (
             <div className="min-w-0">
-              <h1 className="font-bold text-slate-100 text-base leading-tight truncate">Parantel Guard</h1>
-              <p className="text-[11px] text-slate-400 truncate">Enterprise & Parental</p>
+              <h1 className="font-bold text-slate-100 text-base leading-tight truncate">ChildCare</h1>
+              <p className="text-[11px] text-slate-400 truncate">Parental Safety Portal</p>
             </div>
           )}
         </div>

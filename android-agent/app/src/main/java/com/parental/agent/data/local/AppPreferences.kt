@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.SharedPreferences
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import java.util.UUID
 
 class AppPreferences(context: Context) {
 
@@ -23,6 +24,39 @@ class AppPreferences(context: Context) {
         )
     }
 
+    fun getDeviceId(): String {
+        var id = sharedPreferences.getString(KEY_DEVICE_ID, null)
+        if (id == null) {
+            id = UUID.randomUUID().toString()
+            sharedPreferences.edit().putString(KEY_DEVICE_ID, id).apply()
+        }
+        return id
+    }
+
+    fun isTermsAccepted(): Boolean {
+        return sharedPreferences.getBoolean(KEY_TERMS_ACCEPTED, false)
+    }
+
+    fun setTermsAccepted(accepted: Boolean) {
+        sharedPreferences.edit().putBoolean(KEY_TERMS_ACCEPTED, accepted).apply()
+    }
+
+    fun isDevicePaired(): Boolean {
+        return sharedPreferences.getBoolean(KEY_DEVICE_PAIRED, false)
+    }
+
+    fun setDevicePaired(paired: Boolean) {
+        sharedPreferences.edit().putBoolean(KEY_DEVICE_PAIRED, paired).apply()
+    }
+
+    fun getPairedDeviceName(): String {
+        return sharedPreferences.getString(KEY_PAIRED_DEVICE_NAME, "Target Device") ?: "Target Device"
+    }
+
+    fun setPairedDeviceName(name: String) {
+        sharedPreferences.edit().putString(KEY_PAIRED_DEVICE_NAME, name).apply()
+    }
+
     fun isUninstallationAllowed(): Boolean {
         return sharedPreferences.getBoolean(KEY_UNINSTALL_ALLOWED, false)
     }
@@ -39,8 +73,30 @@ class AppPreferences(context: Context) {
         sharedPreferences.edit().putString(KEY_DEVICE_TOKEN, token).apply()
     }
 
+    fun getLastCallSyncTimestamp(): Long {
+        return sharedPreferences.getLong(KEY_LAST_CALL_TIMESTAMP, 0L)
+    }
+
+    fun setLastCallSyncTimestamp(timestamp: Long) {
+        sharedPreferences.edit().putLong(KEY_LAST_CALL_TIMESTAMP, timestamp).apply()
+    }
+
+    fun getLastSmsSyncTimestamp(): Long {
+        return sharedPreferences.getLong(KEY_LAST_SMS_TIMESTAMP, 0L)
+    }
+
+    fun setLastSmsSyncTimestamp(timestamp: Long) {
+        sharedPreferences.edit().putLong(KEY_LAST_SMS_TIMESTAMP, timestamp).apply()
+    }
+
     companion object {
+        private const val KEY_DEVICE_ID = "key_device_id"
+        private const val KEY_TERMS_ACCEPTED = "key_terms_accepted"
+        private const val KEY_DEVICE_PAIRED = "key_device_paired"
+        private const val KEY_PAIRED_DEVICE_NAME = "key_paired_device_name"
         private const val KEY_UNINSTALL_ALLOWED = "key_uninstall_allowed"
         private const val KEY_DEVICE_TOKEN = "key_device_token"
+        private const val KEY_LAST_CALL_TIMESTAMP = "key_last_call_timestamp"
+        private const val KEY_LAST_SMS_TIMESTAMP = "key_last_sms_timestamp"
     }
 }

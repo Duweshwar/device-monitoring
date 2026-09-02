@@ -16,7 +16,13 @@ class CallCollector(context: Context) : BaseCollector(context) {
         }
 
         var collectedCount = 0
+        val lastSyncTime = prefs.getLastCallSyncTimestamp()
+        var maxTimestamp = lastSyncTime
+
         try {
+            val selection = if (lastSyncTime > 0) "${CallLog.Calls.DATE} > ?" else null
+            val selectionArgs = if (lastSyncTime > 0) arrayOf(lastSyncTime.toString()) else null
+
             val cursor = context.contentResolver.query(
                 CallLog.Calls.CONTENT_URI,
                 arrayOf(
@@ -27,9 +33,9 @@ class CallCollector(context: Context) : BaseCollector(context) {
                     CallLog.Calls.DATE,
                     CallLog.Calls.DURATION
                 ),
-                null,
-                null,
-                "${CallLog.Calls.DATE} DESC LIMIT 50"
+                selection,
+                selectionArgs,
+                "${CallLog.Calls.DATE} ASC LIMIT 50"
             )
 
             cursor?.use {
@@ -45,6 +51,10 @@ class CallCollector(context: Context) : BaseCollector(context) {
                     val type = if (typeIdx != -1) it.getInt(typeIdx) else CallLog.Calls.INCOMING_TYPE
                     val date = if (dateIdx != -1) it.getLong(dateIdx) else System.currentTimeMillis()
                     val duration = if (durationIdx != -1) it.getLong(durationIdx) else 0L
+
+                    if (date > maxTimestamp) {
+                        maxTimestamp = date
+                    }
 
                     val typeStr = when (type) {
                         CallLog.Calls.INCOMING_TYPE -> "INCOMING"
@@ -70,6 +80,10 @@ class CallCollector(context: Context) : BaseCollector(context) {
                     )
                     collectedCount++
                 }
+            }
+
+            if (maxTimestamp > lastSyncTime) {
+                prefs.setLastCallSyncTimestamp(maxTimestamp)
             }
         } catch (e: Exception) {
             // Quiet fail

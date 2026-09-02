@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { apiService } from '../services/apiService';
 import { 
   PhoneCall, 
   RefreshCw, 
@@ -47,7 +48,7 @@ interface ConfirmModalState {
 }
 
 export const CallsPage: React.FC<CallsPageProps> = ({ device }) => {
-  const [callLogs, setCallLogs] = useState<CallLogItem[]>([
+  const defaultLogs: CallLogItem[] = [
     { id: 'cl_1', name: 'Bran', number: '91234XX567', direction: 'outgoing', duration: '', simSlot: 'SIM 1 (Airtel)', cellId: '', lac: '', timestamp: '30/08/2026 08:52 pm', isStarred: true, isBlocked: false, hasAudioRecording: false },
     { id: 'cl_2', name: 'Bran', number: '91234XX567', direction: 'incoming', duration: '', simSlot: 'SIM 1 (Airtel)', cellId: '', lac: '', timestamp: '30/08/2026 07:02 pm', isStarred: true, isBlocked: false, hasAudioRecording: false },
     { id: 'cl_3', name: 'Hema', number: '99992XX787', direction: 'outgoing', duration: '', simSlot: 'SIM 2 (Jio 5G)', cellId: '', lac: '', timestamp: '30/08/2026 05:57 pm', isStarred: false, isBlocked: false, hasAudioRecording: false },
@@ -56,7 +57,41 @@ export const CallsPage: React.FC<CallsPageProps> = ({ device }) => {
     { id: 'cl_6', name: 'Bran', number: '91234XX567', direction: 'incoming', duration: '01m 40s', simSlot: 'SIM 1 (Airtel)', cellId: '404-20', lac: '4102', timestamp: '30/08/2026 05:59 am', isStarred: true, isBlocked: false, hasAudioRecording: true },
     { id: 'cl_7', name: 'Alex Rivera', number: '98765XX210', direction: 'missed', duration: '00m 00s', simSlot: 'SIM 1 (Airtel)', cellId: '404-12', lac: '1209', timestamp: '29/08/2026 11:20 am', isStarred: true, isBlocked: false, hasAudioRecording: false },
     { id: 'cl_8', name: 'Sarah Jenkins', number: '97112XX439', direction: 'incoming', duration: '05m 22s', simSlot: 'SIM 2 (Jio 5G)', cellId: '404-12', lac: '1209', timestamp: '29/08/2026 09:40 am', isStarred: false, isBlocked: false, hasAudioRecording: true }
-  ]);
+  ];
+
+  const [callLogs, setCallLogs] = useState<CallLogItem[]>(defaultLogs);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchLiveCalls = async () => {
+      try {
+        const live = await apiService.getCalls(device.id, []);
+        if (isMounted && Array.isArray(live) && live.length > 0) {
+          const formatted: CallLogItem[] = live.map((c: any, i: number) => ({
+            id: c.id || `live_call_${i}`,
+            name: c.contactName || 'Target Contact',
+            number: c.phoneNumber || 'Unknown',
+            direction: ((c.direction || 'incoming').toLowerCase()) as any,
+            duration: c.durationSec ? `${Math.floor(c.durationSec / 60)}m ${c.durationSec % 60}s` : '00m 05s',
+            simSlot: 'SIM 1 (Airtel)',
+            timestamp: new Date(c.timestamp || Date.now()).toLocaleString(),
+            isStarred: false,
+            isBlocked: false,
+            hasAudioRecording: false
+          }));
+          setCallLogs(formatted);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch live call logs:', err);
+      }
+    };
+    fetchLiveCalls();
+    const interval = setInterval(fetchLiveCalls, 5000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [device.id]);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');

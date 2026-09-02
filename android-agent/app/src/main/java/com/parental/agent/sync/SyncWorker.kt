@@ -6,8 +6,6 @@ import androidx.work.WorkerParameters
 import com.parental.agent.data.local.AppDatabase
 import com.parental.agent.data.local.AppPreferences
 import org.json.JSONObject
-import retrofit2.Retrofit
-import retrofit2.converter.gson.GsonConverterFactory
 
 class SyncWorker(
     context: Context,
@@ -23,13 +21,10 @@ class SyncWorker(
             return Result.success()
         }
 
-        return try {
-            val retrofit = Retrofit.Builder()
-                .baseUrl("https://ai-companion.quizpati.com/") // Local dev backend emulator URL
-                .addConverterFactory(GsonConverterFactory.create())
-                .build()
+        val activeDeviceId = prefs.getDeviceId()
 
-            val apiService = retrofit.create(ApiService::class.java)
+        return try {
+            val apiService = ApiConstants.apiService
 
             val eventPayloads = unsyncedEvents.map { entity ->
                 val payloadMap = try {
@@ -41,9 +36,11 @@ class SyncWorker(
                     emptyMap<String, Any?>()
                 }
 
+                val eventDevId = if (entity.deviceId.isBlank() || entity.deviceId == "dev_local_agent") activeDeviceId else entity.deviceId
+
                 mapOf(
                     "eventId" to entity.eventId,
-                    "deviceId" to entity.deviceId,
+                    "deviceId" to eventDevId,
                     "source" to entity.source,
                     "eventType" to entity.eventType,
                     "timestamp" to entity.timestamp,
@@ -53,7 +50,7 @@ class SyncWorker(
             }
 
             val payload = SyncPayload(
-                deviceId = unsyncedEvents.first().deviceId,
+                deviceId = activeDeviceId,
                 events = eventPayloads
             )
 
@@ -64,9 +61,15 @@ class SyncWorker(
                 val isAllowed = body?.allowUninstallation == true
                 prefs.setUninstallationAllowed(isAllowed)
 
-                val syncedIds = unsyncedEvents.map { it.eventId }
-                database.eventDao().markEventsSynced(syncedIds)
-                database.eventDao().purgeSyncedEvents()
+                // STRICT ACKS: Only mark events as synced if server explicitly returned their event ID in syncedEventIds
+                val serverConfirmedIds = body?.syncedEventIds.orEmpty()
+                val localEventIds = unsyncedEvents.map { it.eventId }
+                val confirmedSyncedIds = localEventIds.filter { id -> serverConfirmedIds.contains(id) }
+
+                if (confirmedSyncedIds.isNotEmpty()) {
+                    database.eventDao().markEventsSynced(confirmedSyncedIds)
+                }
+
                 Result.success()
             } else {
                 Result.retry()

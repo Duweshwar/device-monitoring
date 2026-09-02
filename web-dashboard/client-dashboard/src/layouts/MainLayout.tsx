@@ -9,6 +9,7 @@ interface MainLayoutProps {
   onSelectDevice: (device: DeviceInfo) => void;
   activeTab: string;
   onSelectTab: (tabId: string) => void;
+  onLogout?: () => void;
   children: React.ReactNode;
 }
 
@@ -23,7 +24,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex font-sans antialiased">
+    <div className="min-h-screen bg-slate-50 text-slate-900 flex font-sans antialiased overflow-x-hidden">
       {/* Decoupled Sidebar Component */}
       <Sidebar
         currentDevice={currentDevice}
@@ -34,7 +35,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
       />
 
       {/* Decoupled Workspace Area */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto overflow-x-hidden">
         {/* Decoupled Header Component */}
         <Header
           currentDevice={currentDevice}
@@ -46,8 +47,8 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
           onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
         />
 
-        {/* Fluid Page Content Workspace Area */}
-        <main className="p-4 sm:p-6 lg:p-8 w-full space-y-6 transition-all duration-300">
+        {/* Dynamic Page Container */}
+        <main className="flex-1 px-4 sm:px-6 py-6 max-w-7xl w-full mx-auto flex flex-col gap-6 overflow-x-hidden">
           {children}
         </main>
       </div>

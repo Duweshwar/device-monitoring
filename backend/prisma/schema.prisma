@@ -38,23 +38,50 @@ enum AudioCaptureMode {
   unsupported
 }
 
+enum LicenseStatus {
+  UNASSIGNED
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
 model User {
   id             String        @id @default(uuid())
   email          String        @unique
   passwordHash   String
   name           String
+  pairingCode    String?       @unique
   accountType    AccountType
   roles          UserRole[]
   familyId       String?
   family         Family?       @relation(fields: [familyId], references: [id])
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [id])
+  licenses       License[]
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   auditLogs      AuditLog[]
 
   @@index([familyId])
   @@index([organizationId])
+  @@index([pairingCode])
+}
+
+model License {
+  id               String        @id @default(uuid())
+  licenseKey       String        @unique
+  planName         String        // e.g. "ChildCare All-in-One Pro 1-Year", "Family 3-Device Plan"
+  userId           String
+  user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  assignedDeviceId String?       @unique
+  assignedDevice   Device?       @relation(fields: [assignedDeviceId], references: [id], onDelete: SetNull)
+  status           LicenseStatus @default(UNASSIGNED)
+  expiresAt        DateTime
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([userId])
+  @@index([licenseKey])
 }
 
 model Family {
@@ -88,6 +115,7 @@ model Device {
   family         Family?            @relation(fields: [familyId], references: [id])
   organizationId String?
   organization   Organization?      @relation(fields: [organizationId], references: [id])
+  license        License?
   capabilities   CapabilityMatrix?
   events         NormalizedEvent[]
   callLogs       CallLog[]
@@ -97,6 +125,7 @@ model Device {
   appRules       AppRestriction[]
   webRules       WebFilterRule[]
   geofences      GeofenceRule[]
+  updateJobs     DeviceUpdateJob[]
   lastSeenAt     DateTime           @default(now())
   createdAt      DateTime           @default(now())
   updatedAt      DateTime           @updatedAt
@@ -234,6 +263,33 @@ model GeofenceRule {
   alertOnEntry Boolean  @default(true)
   alertOnExit  Boolean  @default(true)
   updatedAt    DateTime @updatedAt
+}
+
+model AppRelease {
+  id           String            @id @default(uuid())
+  versionCode  Int               @unique
+  versionName  String
+  apkUrl       String
+  sha256       String
+  isMandatory  Boolean           @default(false)
+  releaseNotes String
+  createdAt    DateTime          @default(now())
+  updateJobs   DeviceUpdateJob[]
+}
+
+model DeviceUpdateJob {
+  id           String     @id @default(uuid())
+  deviceId     String
+  device       Device     @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  releaseId    String
+  release      AppRelease @relation(fields: [releaseId], references: [id], onDelete: Cascade)
+  status       String     // PENDING, DOWNLOADING, INSTALLING, COMPLETED, FAILED
+  progress     Int        @default(0)
+  errorMessage String?
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+
+  @@index([deviceId])
 }
 
 model AuditLog {

