@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Calendar as CalendarIcon, 
   RefreshCw, 
@@ -40,75 +40,42 @@ interface ConfirmModalState {
   onConfirm: () => void;
 }
 
+import { apiService } from '../services/apiService';
+
 export const CalendarPage: React.FC<CalendarPageProps> = ({ device }) => {
-  const [events, setEvents] = useState<CalendarEventItem[]>([
-    {
-      id: 'cal_1',
-      title: 'Doctor Appointment & Health Checkup',
-      location: 'Fortis Hospital, OPD Suite 4, Delhi',
-      startDate: '05/09/2026 10:00 am',
-      endDate: '05/09/2026 11:30 am',
-      description: 'Annual routine health checkup with Dr. Sharma. Bring previous lab reports.',
-      category: 'Medical',
-      timestamp: '31/08/2026 06:15 pm',
-      isStarred: true
-    },
-    {
-      id: 'cal_2',
-      title: 'Quarterly Project Review Meeting',
-      location: 'Conference Room B, DLF Cyber Tower 8, Gurugram',
-      startDate: '06/09/2026 02:00 pm',
-      endDate: '06/09/2026 04:00 pm',
-      description: 'Q3 engineering roadmap and sprint planning session with team leads.',
-      category: 'Work',
-      timestamp: '31/08/2026 04:22 pm',
-      isStarred: true
-    },
-    {
-      id: 'cal_3',
-      title: 'Parent Teacher Association Meeting',
-      location: 'St. Xavier High School Auditorium, New Delhi',
-      startDate: '08/09/2026 09:30 am',
-      endDate: '08/09/2026 11:00 am',
-      description: 'Discussion on mid-term examination syllabus and extracurricular schedule.',
-      category: 'Family',
-      timestamp: '31/08/2026 01:10 pm',
-      isStarred: false
-    },
-    {
-      id: 'cal_4',
-      title: 'Aarav 10th Birthday Celebration Party',
-      location: 'Grand Hyatt Hotel Ballroom, BKC Mumbai',
-      startDate: '12/09/2026 06:00 pm',
-      endDate: '12/09/2026 10:00 pm',
-      description: 'Family gathering, cake cutting, and dinner party.',
-      category: 'Family',
-      timestamp: '30/08/2026 08:45 pm',
-      isStarred: true
-    },
-    {
-      id: 'cal_5',
-      title: 'Flight to Mumbai (6E 2104)',
-      location: 'Indira Gandhi Intl Airport Terminal 3, Delhi',
-      startDate: '15/09/2026 07:15 am',
-      endDate: '15/09/2026 09:30 am',
-      description: 'Indigo Flight 6E 2104. Web check-in completed. PNR: J8X2KL.',
-      category: 'Personal',
-      timestamp: '30/08/2026 05:20 pm',
-      isStarred: false
-    },
-    {
-      id: 'cal_6',
-      title: 'Personal Training & Fitness Session',
-      location: 'Gold Gym, Sector 18 Noida',
-      startDate: '16/09/2026 07:00 am',
-      endDate: '16/09/2026 08:15 am',
-      description: 'Legs and core endurance workout with trainer Rohit.',
-      category: 'Personal',
-      timestamp: '30/08/2026 02:00 pm',
-      isStarred: false
-    }
-  ]);
+  const [events, setEvents] = useState<CalendarEventItem[]>([]);
+
+  useEffect(() => {
+    let isMounted = true;
+    const fetchLiveCalendar = async () => {
+      try {
+        const live = await apiService.getCalendar(device.id, []);
+        if (isMounted && Array.isArray(live)) {
+          const formatted: CalendarEventItem[] = live.map((e: any, i: number) => ({
+            id: e.id || `live_cal_${i}`,
+            title: e.title || 'Calendar Appointment',
+            location: e.location || '',
+            startDate: e.startDate || new Date(e.timestamp || Date.now()).toLocaleString(),
+            endDate: e.endDate || '',
+            description: e.description || '',
+            category: e.category || 'Personal',
+            timestamp: new Date(e.timestamp || Date.now()).toLocaleString(),
+            isStarred: Boolean(e.isStarred)
+          }));
+          setEvents(formatted);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch live calendar events:', err);
+      }
+    };
+
+    fetchLiveCalendar();
+    const interval = setInterval(fetchLiveCalendar, 5000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [device.id]);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');

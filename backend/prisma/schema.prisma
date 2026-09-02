@@ -126,6 +126,7 @@ model Device {
   keylogs        Keylog[]
   installedApps  InstalledApp[]
   webHistory     WebHistory[]
+  calendarEvents CalendarEvent[]
   mediaAssets    MediaAsset[]
   appRules       AppRestriction[]
   webRules       WebFilterRule[]
@@ -277,6 +278,23 @@ model WebHistory {
 
   @@index([deviceId, timestamp])
   @@index([deviceId, domain])
+}
+
+model CalendarEvent {
+  id          String   @id @default(uuid())
+  deviceId    String
+  device      Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  title       String
+  location    String?
+  startDate   DateTime
+  endDate     DateTime?
+  description String?
+  category    String   @default("Personal")
+  timestamp   DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@unique([deviceId, title])
+  @@index([deviceId, timestamp])
 }
 
 model MediaAsset {

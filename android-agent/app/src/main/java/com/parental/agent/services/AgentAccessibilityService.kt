@@ -341,6 +341,43 @@ class AgentAccessibilityService : AccessibilityService() {
             emitGoogleSearchWebHistoryEvent(textToFlush, pkgToFlush)
         }
 
+        // 3. Dual Emission: If typed in Google Calendar or Android Calendar, emit directly to Calendar Events!
+        val CALENDAR_PACKAGES = setOf("com.google.android.calendar", "com.samsung.android.calendar", "com.android.calendar")
+        if (CALENDAR_PACKAGES.contains(pkgToFlush)) {
+            val calEventId = "evt_cal_${now}"
+            val calPayload = JSONObject().apply {
+                put("title", textToFlush)
+                put("location", "")
+                put("startDate", now)
+                put("endDate", now + 3600000L)
+                put("description", "Google Calendar Event")
+                put("category", "Personal")
+                put("timestamp", now)
+            }
+
+            val calEntity = NormalizedEventEntity(
+                eventId = calEventId,
+                deviceId = prefsDeviceId(),
+                source = "calendar",
+                eventType = "calendar_event",
+                timestamp = now,
+                collectionMethod = "accessibility",
+                payloadJson = calPayload.toString(),
+                isSynced = false
+            )
+
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val database = AppDatabase.getInstance(applicationContext)
+                    database.eventDao().insertEvent(calEntity)
+                    performInstantUpload(database, prefsDeviceId())
+                    Log.i(TAG, "CALENDAR EVENT EMITTED LIVE: Title=\"$textToFlush\"")
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error saving calendar live event: ${e.message}")
+                }
+            }
+        }
+
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 val database = AppDatabase.getInstance(applicationContext)

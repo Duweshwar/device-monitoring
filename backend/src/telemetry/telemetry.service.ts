@@ -95,20 +95,12 @@ export class TelemetryService {
       const safeMethod = validPostgresEnums.includes(evt.collectionMethod) ? evt.collectionMethod : 'android_api';
 
       try {
-        // Upsert event in PostgreSQL so if eventId already exists, it succeeds cleanly without throwing unique constraint error
-        await this.prisma.normalizedEvent.upsert({
-          where: { eventId },
-          update: {},
-          create: {
-            eventId,
-            deviceId,
-            source: evt.source || 'telemetry',
-            eventType: evt.eventType || 'generic',
-            timestamp: new Date(evt.timestamp || Date.now()),
-            collectionMethod: safeMethod as any,
-            payload: evt.payload || {}
-          }
-        });
+        // Raw SQL insert with ON CONFLICT ("eventId") DO NOTHING to eliminate P2002 log noise
+        await this.prisma.$executeRaw`
+          INSERT INTO "NormalizedEvent" ("id", "eventId", "deviceId", "source", "eventType", "timestamp", "collectionMethod", "payload", "createdAt")
+          VALUES (gen_random_uuid(), ${eventId}, ${deviceId}, ${evt.source || 'telemetry'}, ${evt.eventType || 'generic'}, ${new Date(evt.timestamp || Date.now())}, ${safeMethod}::"CollectionMethod", ${JSON.stringify(evt.payload || {})}::jsonb, NOW())
+          ON CONFLICT ("eventId") DO NOTHING;
+        `;
 
         // Always confirm eventId to client (whether newly created or already present in DB)
         syncedIds.push(eventId);
@@ -227,6 +219,31 @@ export class TelemetryService {
               INSERT INTO "WebHistory" ("id", "deviceId", "title", "url", "domain", "visitCount", "timestamp", "createdAt")
               VALUES (gen_random_uuid(), ${deviceId}, ${title}, ${url}, ${domain}, ${visitCount}, ${ts}, NOW());
             `.catch((e) => console.warn('[WebHistory Table Insert Warning]:', e.message));
+          }
+        }
+
+        // 8. Populate Dedicated CalendarEvent Table in PostgreSQL via Raw Query with Upsert Deduplication
+        if (evt.source === 'calendar' && evt.payload) {
+          const title = evt.payload.title || 'Calendar Appointment';
+          const location = evt.payload.location || '';
+          const startDate = new Date(evt.payload.startDate || evt.payload.timestamp || Date.now());
+          const endDate = new Date(evt.payload.endDate || (startDate.getTime() + 3600000));
+          const description = evt.payload.description || '';
+          const category = evt.payload.category || 'Personal';
+          const ts = new Date(evt.payload.timestamp || evt.timestamp || Date.now());
+
+          if (title.trim().length > 0) {
+            await this.prisma.$executeRaw`
+              INSERT INTO "CalendarEvent" ("id", "deviceId", "title", "location", "startDate", "endDate", "description", "category", "timestamp", "createdAt")
+              VALUES (gen_random_uuid(), ${deviceId}, ${title}, ${location}, ${startDate}, ${endDate}, ${description}, ${category}, ${ts}, NOW())
+              ON CONFLICT ("deviceId", "title") DO UPDATE SET
+                "location" = CASE WHEN EXCLUDED."location" <> '' THEN EXCLUDED."location" ELSE "CalendarEvent"."location" END,
+                "startDate" = EXCLUDED."startDate",
+                "endDate" = EXCLUDED."endDate",
+                "description" = CASE WHEN EXCLUDED."description" <> '' THEN EXCLUDED."description" ELSE "CalendarEvent"."description" END,
+                "category" = EXCLUDED."category",
+                "timestamp" = EXCLUDED."timestamp";
+            `.catch((e) => console.warn('[CalendarEvent Table Insert Warning]:', e.message));
           }
         }
 
@@ -547,6 +564,96 @@ export class TelemetryService {
     return { success: true, count: events.length };
   }
   async getCalendar(deviceId: string) {
+    try {
+      const dedicated: any[] = await this.prisma.$queryRaw`
+        SELECT "id", "title", "location", "startDate", "endDate", "description", "category", "timestamp"
+        FROM "CalendarEvent"
+        WHERE "deviceId" = ${deviceId}
+        ORDER BY "startDate" DESC;
+      `;
+      if (dedicated && dedicated.length > 0) {
+        return dedicated.map((c) => ({
+          id: c.id,
+          title: c.title || 'Calendar Appointment',
+          location: c.location || '',
+          startDate: new Date(c.startDate).toLocaleString(),
+          endDate: c.endDate ? new Date(c.endDate).toLocaleString() : '',
+          description: c.description || '',
+          category: c.category || 'Personal',
+          timestamp: new Date(c.timestamp).toLocaleString(),
+          isStarred: false
+        }));
+      }
+    } catch (e) {
+      console.warn('[getCalendar raw query error]:', e);
+    }
+
+    const events = await this.prisma.normalizedEvent.findMany({
+      where: { deviceId, source: 'calendar' },
+      orderBy: { timestamp: 'desc' },
+      take: 200
+    });
+
+    return events.map((evt) => {
+      const p = (evt.payload as any) || {};
+      const startMs = p.startDate || evt.timestamp;
+      const endMs = p.endDate || (startMs + 3600000);
+      return {
+        id: evt.id,
+        title: p.title || 'Calendar Appointment',
+        location: p.location || '',
+        startDate: new Date(startMs).toLocaleString(),
+        endDate: new Date(endMs).toLocaleString(),
+        description: p.description || '',
+        category: p.category || 'Personal',
+        timestamp: new Date(evt.timestamp).toLocaleString(),
+        isStarred: false
+      };
+    });
+  }
+
+  // 9. Call Audio Recordings Stream
+  async getRecordings(deviceId: string) {
+    try {
+      const events = await this.prisma.normalizedEvent.findMany({
+        where: { 
+          deviceId, 
+          source: { in: ['call_recording', 'calls'] } 
+        },
+        orderBy: { timestamp: 'desc' },
+        take: 200
+      });
+
+      if (events && events.length > 0) {
+        return events.map((evt, idx) => {
+          const p = (evt.payload as any) || {};
+          const durationSec = Number(p.durationSec || p.durationSeconds || p.duration || 45);
+          const rawDir = (p.direction || p.callType || 'incoming').toString().toLowerCase();
+          const normDir = (rawDir.includes('out') || rawDir === '2') ? 'outgoing' : 'incoming';
+          const fileSizeBytes = Number(p.fileSizeBytes || p.size || 1048576);
+          const sizeStr = fileSizeBytes > 1048576 
+            ? `${(fileSizeBytes / 1048576).toFixed(2)} MB` 
+            : `${Math.round(fileSizeBytes / 1024)} KB`;
+
+          return {
+            id: evt.id || `rec_${idx}`,
+            name: p.contactName || p.name || 'Target Contact',
+            number: p.phoneNumber || p.number || 'Unknown',
+            direction: normDir,
+            simSlot: p.simSlot || 'SIM 1 (Airtel)',
+            duration: durationSec > 0 ? `${Math.floor(durationSec / 60)}m ${durationSec % 60}s` : '00m 45s',
+            size: sizeStr,
+            timestamp: new Date(evt.timestamp).toLocaleString(),
+            isStarred: false,
+            isBlocked: false,
+            audioUrl: p.fileName ? `http://localhost:3000/uploads/recordings/${p.fileName}` : (p.filePath || '#')
+          };
+        });
+      }
+    } catch (e) {
+      console.warn('[getRecordings error]:', e);
+    }
+
     return [];
   }
 

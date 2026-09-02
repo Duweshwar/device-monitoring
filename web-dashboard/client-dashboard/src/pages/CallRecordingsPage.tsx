@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { apiService } from '../services/apiService';
 import { 
   Disc, 
   RefreshCw, 
@@ -45,105 +46,13 @@ interface ConfirmModalState {
 }
 
 export const CallRecordingsPage: React.FC<CallRecordingsPageProps> = ({ device }) => {
-  const [recordings, setRecordings] = useState<RecordingItem[]>([
-    {
-      id: 'rec_1',
-      name: 'Bran',
-      number: '91234XX567',
-      direction: 'outgoing',
-      simSlot: 'SIM 1 (Airtel)',
-      duration: '02m 15s',
-      size: '1.93 MB',
-      timestamp: '30/08/2026 08:52 pm',
-      isStarred: true,
-      isBlocked: false,
-      audioUrl: '#'
-    },
-    {
-      id: 'rec_2',
-      name: 'Bran',
-      number: '91234XX567',
-      direction: 'incoming',
-      simSlot: 'SIM 1 (Airtel)',
-      duration: '01m 40s',
-      size: '2.66 MB',
-      timestamp: '30/08/2026 07:02 pm',
-      isStarred: true,
-      isBlocked: false,
-      audioUrl: '#'
-    },
-    {
-      id: 'rec_3',
-      name: 'Hema',
-      number: '99992XX787',
-      direction: 'outgoing',
-      simSlot: 'SIM 2 (Jio 5G)',
-      duration: '04m 12s',
-      size: '783 KB',
-      timestamp: '30/08/2026 05:57 pm',
-      isStarred: false,
-      isBlocked: false,
-      audioUrl: '#'
-    },
-    {
-      id: 'rec_4',
-      name: 'Hema',
-      number: '9234XXX87',
-      direction: 'incoming',
-      simSlot: 'SIM 1 (Airtel)',
-      duration: '00m 45s',
-      size: '2.21 MB',
-      timestamp: '30/08/2026 04:59 pm',
-      isStarred: false,
-      isBlocked: false,
-      audioUrl: '#'
-    },
-    {
-      id: 'rec_5',
-      name: 'Samaira',
-      number: '92342XX454',
-      direction: 'outgoing',
-      simSlot: 'SIM 2 (Jio 5G)',
-      duration: '03m 10s',
-      size: '1.34 MB',
-      timestamp: '30/08/2026 02:53 pm',
-      isStarred: false,
-      isBlocked: false,
-      audioUrl: '#'
-    },
-    {
-      id: 'rec_6',
-      name: 'Bran',
-      number: '91234XX567',
-      direction: 'incoming',
-      simSlot: 'SIM 1 (Airtel)',
-      duration: '01m 15s',
-      size: '2.25 MB',
-      timestamp: '30/08/2026 05:59 am',
-      isStarred: true,
-      isBlocked: false,
-      audioUrl: '#'
-    },
-    {
-      id: 'rec_7',
-      name: 'Sarah Jenkins',
-      number: '97112XX439',
-      direction: 'incoming',
-      simSlot: 'SIM 2 (Jio 5G)',
-      duration: '05m 22s',
-      size: '4.10 MB',
-      timestamp: '29/08/2026 09:40 am',
-      isStarred: false,
-      isBlocked: false,
-      audioUrl: '#'
-    }
-  ]);
-
+  const [recordings, setRecordings] = useState<RecordingItem[]>([]);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterDirection, setFilterDirection] = useState('all');
   const [pageSize, setPageSize] = useState(10);
   const [playingAudioId, setPlayingAudioId] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState>({
     isOpen: false,
@@ -153,6 +62,46 @@ export const CallRecordingsPage: React.FC<CallRecordingsPageProps> = ({ device }
     danger: true,
     onConfirm: () => {},
   });
+
+  const fetchLiveRecordings = async () => {
+    try {
+      const live = await apiService.getRecordings(device.id, []);
+      if (Array.isArray(live)) {
+        const formatted: RecordingItem[] = live.map((r: any, i: number) => ({
+          id: r.id || `live_rec_${i}`,
+          name: r.name || 'Target Contact',
+          number: r.number || 'Unknown',
+          direction: (r.direction || 'incoming').toLowerCase() === 'outgoing' ? 'outgoing' : 'incoming',
+          simSlot: r.simSlot || 'SIM 1 (Airtel)',
+          duration: r.duration || '00m 45s',
+          size: r.size || '1.20 MB',
+          timestamp: r.timestamp || new Date().toLocaleString(),
+          isStarred: Boolean(r.isStarred),
+          isBlocked: Boolean(r.isBlocked),
+          audioUrl: r.audioUrl || '#'
+        }));
+        setRecordings(formatted);
+      }
+    } catch (err) {
+      console.warn('Failed to fetch live call recordings:', err);
+    }
+  };
+
+  useEffect(() => {
+    let isMounted = true;
+    fetchLiveRecordings();
+    const interval = setInterval(fetchLiveRecordings, 5000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [device.id]);
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    await fetchLiveRecordings();
+    setTimeout(() => setIsRefreshing(false), 500);
+  };
 
   const toggleSelectAll = () => {
     if (selectedIds.length === filteredRecordings.length) {
@@ -179,7 +128,16 @@ export const CallRecordingsPage: React.FC<CallRecordingsPageProps> = ({ device }
   };
 
   const triggerDownload = (rec: RecordingItem) => {
-    alert(`Downloading 2-Way Audio Recording (${rec.size}) for call with ${rec.name}...`);
+    if (rec.audioUrl && rec.audioUrl !== '#') {
+      const link = document.createElement('a');
+      link.href = rec.audioUrl;
+      link.download = `recording_${rec.name}_${rec.number}.m4a`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } else {
+      alert(`Downloading 2-Way Audio Recording (${rec.size}) for call with ${rec.name}...`);
+    }
   };
 
   {/* Block / Unblock Action Confirmation Modal */}
@@ -296,7 +254,7 @@ export const CallRecordingsPage: React.FC<CallRecordingsPageProps> = ({ device }
           <p className="text-xs text-slate-500">2-Way audio call recording files, inline playback player, and high-quality MP3/AMR downloads for {device.alias}</p>
         </div>
         <span className="px-3 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full text-xs font-semibold">
-          Total Recordings: 290 Files
+          Total Recordings: {recordings.length} Files
         </span>
       </div>
 
@@ -307,10 +265,10 @@ export const CallRecordingsPage: React.FC<CallRecordingsPageProps> = ({ device }
           {/* Action Buttons: Refresh, Delete, Delete All, Data Filter */}
           <div className="flex flex-wrap items-center gap-2">
             <button 
-              onClick={() => console.log('Refreshing audio recordings...')}
+              onClick={handleManualRefresh}
               className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 text-xs font-semibold transition-colors shadow-xs"
             >
-              <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
+              <RefreshCw className={`w-3.5 h-3.5 text-slate-500 ${isRefreshing ? 'animate-spin' : ''}`} />
               <span>Refresh</span>
             </button>
 
@@ -507,7 +465,7 @@ export const CallRecordingsPage: React.FC<CallRecordingsPageProps> = ({ device }
 
         {/* Bottom Pagination */}
         <div className="flex items-center justify-between pt-2 text-xs text-slate-500">
-          <span>Showing 1 to {filteredRecordings.length} of 290 audio recordings</span>
+          <span>Showing 1 to {filteredRecordings.length} of {recordings.length} audio recordings</span>
           <div className="flex items-center gap-1">
             <button className="px-2.5 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium disabled:opacity-50" disabled>
               Previous
@@ -528,6 +486,18 @@ export const CallRecordingsPage: React.FC<CallRecordingsPageProps> = ({ device }
         </div>
 
       </div>
+
+      {/* Hidden HTML5 Audio Element for Playback Streaming */}
+      {playingAudioId && (
+        <audio
+          autoPlay
+          src={recordings.find(r => r.id === playingAudioId)?.audioUrl}
+          onEnded={() => setPlayingAudioId(null)}
+          onError={() => {
+            console.warn('Audio playback error or placeholder URL.');
+          }}
+        />
+      )}
     </div>
   );
 };

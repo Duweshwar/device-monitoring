@@ -97,5 +97,10 @@ export const apiService = {
   // 11. Calendar Events
   async getCalendar(deviceId: string, fallback: any[]) {
     return apiFetch<any[]>(`/api/v1/telemetry/calendar/${deviceId}`, fallback);
+  },
+
+  // 12. Call Audio Recordings
+  async getRecordings(deviceId: string, fallback: any[]) {
+    return apiFetch<any[]>(`/api/v1/telemetry/recordings/${deviceId}`, fallback);
   }
 };

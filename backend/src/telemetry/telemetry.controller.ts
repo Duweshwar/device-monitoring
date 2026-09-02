@@ -108,4 +108,10 @@ export class TelemetryController {
   async getCalendar(@Param('deviceId') deviceId: string) {
     return this.telemetryService.getCalendar(deviceId);
   }
+
+  // 9. Call Audio Recordings Endpoints
+  @Get('recordings/:deviceId')
+  async getRecordings(@Param('deviceId') deviceId: string) {
+    return this.telemetryService.getRecordings(deviceId);
+  }
 }

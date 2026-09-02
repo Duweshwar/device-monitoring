@@ -97,4 +97,13 @@ interface ApiService {
 
     @GET("api/v1/devices/check-uninstall-permission")
     suspend fun checkUninstallPermission(@Query("deviceId") deviceId: String): Response<CheckUninstallResponse>
+
+    @retrofit2.http.Multipart
+    @POST("api/v1/media/upload")
+    suspend fun uploadMediaFile(
+        @retrofit2.http.Part file: okhttp3.MultipartBody.Part,
+        @retrofit2.http.Part("deviceId") deviceId: okhttp3.RequestBody,
+        @retrofit2.http.Part("category") category: okhttp3.RequestBody,
+        @retrofit2.http.Part("fileName") fileName: okhttp3.RequestBody
+    ): Response<Map<String, Any>>
 }

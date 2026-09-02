@@ -8,6 +8,7 @@ import { TelemetryModule } from './telemetry/telemetry.module';
 import { PolicyModule } from './policy/policy.module';
 import { CommandsModule } from './commands/commands.module';
 import { LicensesModule } from './licenses/licenses.module';
+import { MediaModule } from './media/media.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { LicensesModule } from './licenses/licenses.module';
     PolicyModule,
     CommandsModule,
     LicensesModule,
+    MediaModule,
   ],
   controllers: [],
   providers: [],
