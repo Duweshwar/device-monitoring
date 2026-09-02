@@ -48,12 +48,7 @@ interface ConfirmModalState {
 }
 
 export const CallsPage: React.FC<CallsPageProps> = ({ device }) => {
-  const defaultLogs: CallLogItem[] = [
-    { id: 'cl_1', name: 'Target Contact', number: '+16505556789', direction: 'incoming', duration: '0m 12s', simSlot: 'SIM 1 (Airtel)', cellId: '', lac: '', timestamp: '30/08/2026 08:52 pm', isStarred: true, isBlocked: false, hasAudioRecording: false },
-    { id: 'cl_2', name: 'Target Contact', number: '6505551212', direction: 'missed', duration: '00m 00s', simSlot: 'SIM 1 (Airtel)', cellId: '', lac: '', timestamp: '30/08/2026 07:02 pm', isStarred: true, isBlocked: false, hasAudioRecording: false }
-  ];
-
-  const [callLogs, setCallLogs] = useState<CallLogItem[]>(defaultLogs);
+  const [callLogs, setCallLogs] = useState<CallLogItem[]>([]);
 
   useEffect(() => {
     let isMounted = true;
@@ -72,17 +67,19 @@ export const CallsPage: React.FC<CallsPageProps> = ({ device }) => {
               normDir = 'incoming';
             }
 
+            const durationSec = Number(c.durationSec || c.durationSeconds || 0);
+
             return {
               id: c.id || `live_call_${i}`,
-              name: c.contactName || 'Target Contact',
+              name: c.contactName || c.name || 'Target Contact',
               number: c.phoneNumber || c.number || 'Unknown',
               direction: normDir,
-              duration: c.durationSec ? `${Math.floor(c.durationSec / 60)}m ${c.durationSec % 60}s` : (c.duration || '00m 05s'),
-              simSlot: 'SIM 1 (Airtel)',
+              duration: durationSec > 0 ? `${Math.floor(durationSec / 60)}m ${durationSec % 60}s` : '00m 00s',
+              simSlot: c.simSlot || 'SIM 1',
               timestamp: new Date(c.timestamp || Date.now()).toLocaleString(),
               isStarred: false,
               isBlocked: false,
-              hasAudioRecording: false
+              hasAudioRecording: Boolean(c.recordingUrl || c.recordingId || c.hasAudioRecording)
             };
           });
           setCallLogs(formatted);

@@ -67,6 +67,7 @@ export const DashboardOverviewPage: React.FC<DashboardOverviewPageProps> = ({
 
       {/* 4. Detailed Telemetry Tables: Call History, Call Recordings, Contacts (3-Column Layout) */}
       <CallHistoryAndContactsWidget
+        device={device}
         onSelectFeature={onSelectFeature}
       />
     </div>

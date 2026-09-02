@@ -264,9 +264,34 @@ export class TelemetryService {
   }
 
   async getCalls(deviceId: string) {
-    return this.prisma.callLog.findMany({
-      where: { deviceId },
-      orderBy: { timestamp: 'desc' }
+    try {
+      const dedicated = await this.prisma.callLog.findMany({
+        where: { deviceId },
+        orderBy: { timestamp: 'desc' }
+      });
+      if (dedicated && dedicated.length > 0) {
+        return dedicated;
+      }
+    } catch (e) {
+      console.warn('[getCalls dedicated query error]:', e);
+    }
+
+    const events = await this.prisma.normalizedEvent.findMany({
+      where: { deviceId, source: 'calls' },
+      orderBy: { timestamp: 'desc' },
+      take: 200
+    });
+
+    return events.map((evt) => {
+      const p = (evt.payload as any) || {};
+      return {
+        id: evt.id,
+        phoneNumber: p.phoneNumber || p.number || 'Unknown',
+        contactName: p.contactName || p.name || 'Target Contact',
+        direction: p.callType || p.direction || 'INCOMING',
+        durationSec: Number(p.durationSeconds || p.duration || 0),
+        timestamp: evt.timestamp
+      };
     });
   }
 
