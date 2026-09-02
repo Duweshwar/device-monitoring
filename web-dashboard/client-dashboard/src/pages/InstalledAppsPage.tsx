@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { apiService } from '../services/apiService';
 import { 
   AppWindow, 
   RefreshCw, 
@@ -11,7 +12,9 @@ import {
   X,
   ExternalLink,
   Smartphone,
-  Eye
+  Eye,
+  Filter,
+  Cpu
 } from 'lucide-react';
 import { DeviceInfo } from '../types/dashboard.types';
 
@@ -28,6 +31,7 @@ interface InstalledAppItem {
   timestamp: string;
   isStarred: boolean;
   isBlocked: boolean;
+  isSystemApp: boolean;
   playStoreUrl: string;
 }
 
@@ -41,89 +45,84 @@ interface ConfirmModalState {
 }
 
 export const InstalledAppsPage: React.FC<InstalledAppsPageProps> = ({ device }) => {
-  const [apps, setApps] = useState<InstalledAppItem[]>([
+  const defaultApps: InstalledAppItem[] = [
     {
       id: 'app_1',
-      label: 'WeChat',
-      packageName: 'com.tencent.mm',
-      version: '12.09',
-      status: 'Removed',
-      timestamp: '31/08/2026 04:35 pm',
-      isStarred: false,
-      isBlocked: true,
-      playStoreUrl: 'https://play.google.com/store/apps/details?id=com.tencent.mm'
-    },
-    {
-      id: 'app_2',
-      label: 'ZEE5 Movies & Shows',
-      packageName: 'com.zee5.android',
-      version: '11.2.96',
-      status: 'Removed',
-      timestamp: '31/08/2026 03:16 pm',
-      isStarred: false,
-      isBlocked: true,
-      playStoreUrl: 'https://play.google.com/store/apps/details?id=com.zee5.android'
-    },
-    {
-      id: 'app_3',
-      label: 'UC Browser',
-      packageName: 'com.UCMobile.intl',
-      version: '1.09',
-      status: 'Removed',
-      timestamp: '31/08/2026 02:56 pm',
-      isStarred: false,
-      isBlocked: true,
-      playStoreUrl: 'https://play.google.com/store/apps/details?id=com.UCMobile.intl'
-    },
-    {
-      id: 'app_4',
-      label: 'Tango Live Stream',
-      packageName: 'com.sgiggle.production',
-      version: '3.1',
-      status: 'Installed',
-      timestamp: '31/08/2026 10:57 am',
-      isStarred: true,
-      isBlocked: false,
-      playStoreUrl: 'https://play.google.com/store/apps/details?id=com.sgiggle.production'
-    },
-    {
-      id: 'app_5',
       label: 'Instagram',
       packageName: 'com.instagram.android',
       version: '280.0.0.18',
-      status: 'Updated',
-      timestamp: '31/08/2026 09:44 am',
+      status: 'Installed',
+      timestamp: new Date().toLocaleString(),
       isStarred: true,
       isBlocked: false,
+      isSystemApp: false,
       playStoreUrl: 'https://play.google.com/store/apps/details?id=com.instagram.android'
     },
     {
-      id: 'app_6',
-      label: 'Snapchat',
-      packageName: 'com.snapchat.android',
-      version: '12.45.0.32',
+      id: 'app_2',
+      label: 'WhatsApp',
+      packageName: 'com.whatsapp',
+      version: '2.24.10',
       status: 'Installed',
-      timestamp: '31/08/2026 07:47 am',
+      timestamp: new Date().toLocaleString(),
       isStarred: true,
       isBlocked: false,
-      playStoreUrl: 'https://play.google.com/store/apps/details?id=com.snapchat.android'
+      isSystemApp: false,
+      playStoreUrl: 'https://play.google.com/store/apps/details?id=com.whatsapp'
     },
     {
-      id: 'app_7',
-      label: 'Subway Surfers',
-      packageName: 'com.kiloo.subwaysurf',
-      version: '3.12.0',
+      id: 'app_3',
+      label: 'Android System UI',
+      packageName: 'com.android.systemui',
+      version: '14.0.0',
       status: 'Installed',
-      timestamp: '30/08/2026 08:20 pm',
+      timestamp: new Date().toLocaleString(),
       isStarred: false,
       isBlocked: false,
-      playStoreUrl: 'https://play.google.com/store/apps/details?id=com.kiloo.subwaysurf'
+      isSystemApp: true,
+      playStoreUrl: 'https://play.google.com/store/apps/details?id=com.android.systemui'
     }
-  ]);
+  ];
+
+  const [apps, setApps] = useState<InstalledAppItem[]>(defaultApps);
+
+  // Poll live Installed Applications telemetry from NestJS PostgreSQL backend
+  useEffect(() => {
+    let isMounted = true;
+    const fetchLiveApps = async () => {
+      try {
+        const live = await apiService.getInstalledApps(device.id, []);
+        if (isMounted && Array.isArray(live) && live.length > 0) {
+          const formatted: InstalledAppItem[] = live.map((a: any, i: number) => ({
+            id: a.id || `live_app_${i}`,
+            label: a.label || a.appName || a.packageName,
+            packageName: a.packageName,
+            version: a.version || a.versionName || '1.0.0',
+            status: a.status || 'Installed',
+            timestamp: new Date(a.timestamp || Date.now()).toLocaleString(),
+            isStarred: false,
+            isBlocked: Boolean(a.isBlocked),
+            isSystemApp: Boolean(a.isSystemApp),
+            playStoreUrl: a.playStoreUrl || `https://play.google.com/store/apps/details?id=${a.packageName}`
+          }));
+          setApps(formatted);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch live installed applications:', err);
+      }
+    };
+
+    fetchLiveApps();
+    const interval = setInterval(fetchLiveApps, 5000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [device.id]);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const [filterStatus, setFilterStatus] = useState('all');
+  const [filterStatus, setFilterStatus] = useState('user'); // Default to User Apps
   const [pageSize, setPageSize] = useState(10);
 
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState>({
@@ -155,7 +154,6 @@ export const InstalledAppsPage: React.FC<InstalledAppsPageProps> = ({ device }) 
     setApps(apps.map(a => a.id === id ? { ...a, isStarred: !a.isStarred } : a));
   };
 
-  {/* Block / Unblock Action Confirmation Modal */}
   const requestToggleBlock = (item: InstalledAppItem) => {
     const isBlocking = !item.isBlocked;
     setConfirmModal({
@@ -177,7 +175,6 @@ export const InstalledAppsPage: React.FC<InstalledAppsPageProps> = ({ device }) 
     });
   };
 
-  {/* Delete Selected Action Confirmation Modal */}
   const requestDeleteSelected = () => {
     if (selectedIds.length === 0) return;
     setConfirmModal({
@@ -194,7 +191,6 @@ export const InstalledAppsPage: React.FC<InstalledAppsPageProps> = ({ device }) 
     });
   };
 
-  {/* Delete All Action Confirmation Modal */}
   const requestDeleteAll = () => {
     setConfirmModal({
       isOpen: true,
@@ -210,13 +206,18 @@ export const InstalledAppsPage: React.FC<InstalledAppsPageProps> = ({ device }) 
     });
   };
 
+  const userAppsCount = apps.filter(a => !a.isSystemApp).length;
+  const systemAppsCount = apps.filter(a => a.isSystemApp).length;
+
   const filteredApps = apps.filter(a => {
     const matchesSearch = a.label.toLowerCase().includes(searchTerm.toLowerCase()) || 
                           a.packageName.toLowerCase().includes(searchTerm.toLowerCase());
+    if (filterStatus === 'user') return matchesSearch && !a.isSystemApp;
+    if (filterStatus === 'system') return matchesSearch && a.isSystemApp;
     if (filterStatus === 'installed') return matchesSearch && a.status === 'Installed';
     if (filterStatus === 'blocked') return matchesSearch && (a.status === 'Removed' || a.isBlocked);
     if (filterStatus === 'updated') return matchesSearch && a.status === 'Updated';
-    return matchesSearch;
+    return matchesSearch; // 'all'
   });
 
   return (
@@ -274,16 +275,20 @@ export const InstalledAppsPage: React.FC<InstalledAppsPageProps> = ({ device }) 
           <h1 className="text-xl font-bold text-slate-900 tracking-tight">Installed Applications</h1>
           <p className="text-xs text-slate-500">Inventory of installed apps, versions, block policy controls, and store links for {device.alias}</p>
         </div>
-        <span className="px-3 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full text-xs font-semibold">
-          Total Inventory: 78 Apps
-        </span>
+        <div className="flex items-center gap-2">
+          <span className="px-3 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-full text-xs font-semibold">
+            User Apps: {userAppsCount}
+          </span>
+          <span className="px-3 py-1 bg-slate-100 text-slate-600 border border-slate-200 rounded-full text-xs font-semibold">
+            System Apps: {systemAppsCount}
+          </span>
+        </div>
       </div>
 
-      {/* Top Action Toolbar (OneMonitar Style Alignment) */}
+      {/* Top Action Toolbar */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           
-          {/* Action Buttons: Refresh, Delete, Delete All, Status Filter */}
           <div className="flex flex-wrap items-center gap-2">
             <button 
               onClick={() => console.log('Refreshing installed applications...')}
@@ -314,20 +319,23 @@ export const InstalledAppsPage: React.FC<InstalledAppsPageProps> = ({ device }) 
               <span>Delete All</span>
             </button>
 
-            {/* App Status Filter Dropdown */}
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-medium text-slate-700 focus:outline-none focus:border-indigo-500"
-            >
-              <option value="all">Show all data</option>
-              <option value="installed">Installed apps only</option>
-              <option value="blocked">Blocked / Removed apps only</option>
-              <option value="updated">Updated apps only</option>
-            </select>
+            {/* Filter Dropdown with System App Filter Option */}
+            <div className="flex items-center gap-1 bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1">
+              <Filter className="w-3.5 h-3.5 text-slate-500" />
+              <select
+                value={filterStatus}
+                onChange={(e) => setFilterStatus(e.target.value)}
+                className="bg-transparent text-xs font-medium text-slate-700 focus:outline-none cursor-pointer"
+              >
+                <option value="user">User Downloaded Apps Only ({userAppsCount})</option>
+                <option value="all">Show All Apps (User + System: {apps.length})</option>
+                <option value="system">System Apps Only ({systemAppsCount})</option>
+                <option value="installed">Installed Status Only</option>
+                <option value="blocked">Blocked / Removed Only</option>
+              </select>
+            </div>
           </div>
 
-          {/* Search Box */}
           <div className="relative w-full sm:w-64">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
@@ -341,7 +349,6 @@ export const InstalledAppsPage: React.FC<InstalledAppsPageProps> = ({ device }) 
 
         </div>
 
-        {/* Entries Selector */}
         <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
           <div className="flex items-center gap-2">
             <span>Show</span>
@@ -357,10 +364,9 @@ export const InstalledAppsPage: React.FC<InstalledAppsPageProps> = ({ device }) 
             <span>entries</span>
           </div>
 
-          <span>Showing {filteredApps.length} installed applications</span>
+          <span>Showing {filteredApps.length} installed applications ({filterStatus === 'user' ? 'User Apps' : filterStatus === 'system' ? 'System Apps' : 'All Apps'})</span>
         </div>
 
-        {/* Installed Applications Data Table (OneMonitar Style Alignment) */}
         <div className="overflow-x-auto border border-slate-200 rounded-lg">
           <table className="w-full text-left border-collapse text-xs">
             <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
@@ -375,6 +381,7 @@ export const InstalledAppsPage: React.FC<InstalledAppsPageProps> = ({ device }) 
                 </th>
                 <th className="p-3 w-14 text-center">Starred</th>
                 <th className="p-3">Label</th>
+                <th className="p-3">Type</th>
                 <th className="p-3">Version</th>
                 <th className="p-3">Status</th>
                 <th className="p-3 text-center">Play Store</th>
@@ -404,7 +411,11 @@ export const InstalledAppsPage: React.FC<InstalledAppsPageProps> = ({ device }) 
                   </td>
                   <td className="p-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-lg bg-indigo-100 text-indigo-700 border border-indigo-200 flex items-center justify-center font-bold text-sm shrink-0">
+                      <div className={`w-8 h-8 rounded-lg border flex items-center justify-center font-bold text-sm shrink-0 ${
+                        item.isSystemApp 
+                          ? 'bg-slate-100 text-slate-600 border-slate-200' 
+                          : 'bg-indigo-100 text-indigo-700 border-indigo-200'
+                      }`}>
                         {item.label.charAt(0)}
                       </div>
                       <div>
@@ -412,6 +423,19 @@ export const InstalledAppsPage: React.FC<InstalledAppsPageProps> = ({ device }) 
                         <span className="font-mono text-[11px] text-slate-400 block">{item.packageName}</span>
                       </div>
                     </div>
+                  </td>
+                  <td className="p-3">
+                    {item.isSystemApp ? (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-600 border border-slate-200 inline-flex items-center gap-1">
+                        <Cpu className="w-3 h-3 text-slate-400" />
+                        <span>System</span>
+                      </span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200 inline-flex items-center gap-1">
+                        <Smartphone className="w-3 h-3 text-emerald-500" />
+                        <span>User App</span>
+                      </span>
+                    )}
                   </td>
                   <td className="p-3 font-mono text-slate-600">{item.version}</td>
                   <td className="p-3">
@@ -432,7 +456,6 @@ export const InstalledAppsPage: React.FC<InstalledAppsPageProps> = ({ device }) 
                     )}
                   </td>
 
-                  {/* Play Store View Link Column (OneMonitar Style Indigo/Brownish View Button) */}
                   <td className="p-3 text-center">
                     <a
                       href={item.playStoreUrl}
@@ -446,7 +469,6 @@ export const InstalledAppsPage: React.FC<InstalledAppsPageProps> = ({ device }) 
                     </a>
                   </td>
 
-                  {/* Dedicated Action Column (Block / Unblock Button) */}
                   <td className="p-3 text-center">
                     <button
                       onClick={() => requestToggleBlock(item)}
@@ -477,21 +499,14 @@ export const InstalledAppsPage: React.FC<InstalledAppsPageProps> = ({ device }) 
           </table>
         </div>
 
-        {/* Bottom Pagination */}
         <div className="flex items-center justify-between pt-2 text-xs text-slate-500">
-          <span>Showing 1 to {filteredApps.length} of 78 installed applications</span>
+          <span>Showing 1 to {filteredApps.length} of {apps.length} installed applications</span>
           <div className="flex items-center gap-1">
             <button className="px-2.5 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium disabled:opacity-50" disabled>
               Previous
             </button>
             <button className="px-3 py-1 rounded bg-indigo-600 text-white text-xs font-semibold">
               1
-            </button>
-            <button className="px-3 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium">
-              2
-            </button>
-            <button className="px-3 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium">
-              3
             </button>
             <button className="px-2.5 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium">
               Next

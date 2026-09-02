@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { apiService } from '../services/apiService';
 import { 
   MapPin, 
   RefreshCw, 
@@ -41,7 +42,7 @@ interface ConfirmModalState {
 }
 
 export const LiveLocationPage: React.FC<LiveLocationPageProps> = ({ device }) => {
-  const [locations, setLocations] = useState<LocationItem[]>([
+  const defaultLocations: LocationItem[] = [
     {
       id: 'loc_1',
       address: 'Netaji Subhash Marg, Lal Qila, Old Delhi, Delhi 110006',
@@ -51,64 +52,48 @@ export const LiveLocationPage: React.FC<LiveLocationPageProps> = ({ device }) =>
       accuracy: '12m',
       timestamp: '31/08/2026 11:21 pm',
       isStarred: true
-    },
-    {
-      id: 'loc_2',
-      address: 'Connaught Place, Inner Circle, New Delhi 110001',
-      lat: 28.6304,
-      lng: 77.2177,
-      provider: 'Network',
-      accuracy: '18m',
-      timestamp: '31/08/2026 08:14 pm',
-      isStarred: false
-    },
-    {
-      id: 'loc_3',
-      address: 'Plot No. A2, Maharaja Agrasen Marg, Sector 62, Noida 201309',
-      lat: 28.5648,
-      lng: 77.3218,
-      provider: 'Fused',
-      accuracy: '5m',
-      timestamp: '31/08/2026 06:02 pm',
-      isStarred: false
-    },
-    {
-      id: 'loc_4',
-      address: 'Gateway of India, Apollo Bandar, Colaba, Mumbai 400001',
-      lat: 18.922064,
-      lng: 72.834641,
-      provider: 'GPS',
-      accuracy: '3m',
-      timestamp: '31/08/2026 05:40 pm',
-      isStarred: true
-    },
-    {
-      id: 'loc_5',
-      address: 'Cyber City, DLF Tower 8, Phase 2, Gurugram 122002',
-      lat: 28.4950,
-      lng: 77.0895,
-      provider: 'Network',
-      accuracy: '15m',
-      timestamp: '31/08/2026 04:55 pm',
-      isStarred: false
-    },
-    {
-      id: 'loc_6',
-      address: 'Bandra Kurla Complex, G Block, Mumbai 400051',
-      lat: 19.0657,
-      lng: 72.8687,
-      provider: 'GPS',
-      accuracy: '4m',
-      timestamp: '30/08/2026 09:10 pm',
-      isStarred: false
     }
-  ]);
+  ];
+
+  const [locations, setLocations] = useState<LocationItem[]>(defaultLocations);
+
+  // Poll real-time GPS location logs from NestJS PostgreSQL backend
+  useEffect(() => {
+    let isMounted = true;
+    const fetchLiveLocations = async () => {
+      try {
+        const live = await apiService.getLocations(device.id, []);
+        if (isMounted && Array.isArray(live) && live.length > 0) {
+          const formatted: LocationItem[] = live.map((l: any, i: number) => ({
+            id: l.id || `live_loc_${i}`,
+            address: l.address || `Lat: ${l.latitude}, Lng: ${l.longitude}`,
+            lat: Number(l.latitude || 28.6562),
+            lng: Number(l.longitude || 77.2410),
+            provider: (l.provider || 'GPS') as any,
+            accuracy: `${l.accuracy || 10}m`,
+            timestamp: new Date(l.timestamp || Date.now()).toLocaleString(),
+            isStarred: false
+          }));
+          setLocations(formatted);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch live locations:', err);
+      }
+    };
+
+    fetchLiveLocations();
+    const interval = setInterval(fetchLiveLocations, 5000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [device.id]);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterProvider, setFilterProvider] = useState('all');
   const [pageSize, setPageSize] = useState(10);
-  const [activeMapItem, setActiveMapItem] = useState<LocationItem>(locations[0]);
+  const [activeMapItem, setActiveMapItem] = useState<LocationItem>(locations[0] || defaultLocations[0]);
   const [showMapModal, setShowMapModal] = useState(false);
 
   const [confirmModal, setConfirmModal] = useState<ConfirmModalState>({
@@ -144,7 +129,6 @@ export const LiveLocationPage: React.FC<LiveLocationPageProps> = ({ device }) =>
     window.open(`https://maps.google.com/maps?q=${lat},${lng}`, '_blank');
   };
 
-  {/* Delete Selected Action Confirmation Modal */}
   const requestDeleteSelected = () => {
     if (selectedIds.length === 0) return;
     setConfirmModal({
@@ -161,7 +145,6 @@ export const LiveLocationPage: React.FC<LiveLocationPageProps> = ({ device }) =>
     });
   };
 
-  {/* Delete All Action Confirmation Modal */}
   const requestDeleteAll = () => {
     setConfirmModal({
       isOpen: true,
@@ -236,7 +219,7 @@ export const LiveLocationPage: React.FC<LiveLocationPageProps> = ({ device }) =>
       )}
 
       {/* Focus Map Preview Modal */}
-      {showMapModal && (
+      {showMapModal && activeMapItem && (
         <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl space-y-4 border border-slate-200">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
@@ -252,7 +235,6 @@ export const LiveLocationPage: React.FC<LiveLocationPageProps> = ({ device }) =>
               </button>
             </div>
 
-            {/* Embedded Interactive Map Card */}
             <div className="h-64 rounded-xl bg-slate-100 border border-slate-200 relative overflow-hidden flex flex-col justify-between p-4 shadow-inner">
               <div className="absolute inset-0 bg-linear-to-br from-indigo-950/10 via-slate-900/20 to-sky-950/10 z-0 pointer-events-none" />
               
@@ -305,15 +287,14 @@ export const LiveLocationPage: React.FC<LiveLocationPageProps> = ({ device }) =>
           <p className="text-xs text-slate-500">Real-time GPS coordinates, reverse geocoded addresses, and map view tracking for {device.alias}</p>
         </div>
         <span className="px-3 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full text-xs font-semibold">
-          Total Recorded: 142 Points
+          Total Recorded: {locations.length} Points
         </span>
       </div>
 
-      {/* Top Action Toolbar (OneMonitar Style Alignment) */}
+      {/* Top Action Toolbar */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           
-          {/* Action Buttons: Sync (Cyan), Delete Data, Delete All Data, Provider Filter */}
           <div className="flex flex-wrap items-center gap-2">
             <button 
               onClick={() => console.log('Syncing real-time GPS location...')}
@@ -344,7 +325,6 @@ export const LiveLocationPage: React.FC<LiveLocationPageProps> = ({ device }) =>
               <span>Delete All Data</span>
             </button>
 
-            {/* Provider Filter Dropdown */}
             <select
               value={filterProvider}
               onChange={(e) => setFilterProvider(e.target.value)}
@@ -357,7 +337,6 @@ export const LiveLocationPage: React.FC<LiveLocationPageProps> = ({ device }) =>
             </select>
           </div>
 
-          {/* Search Box */}
           <div className="relative w-full sm:w-64">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
@@ -371,7 +350,6 @@ export const LiveLocationPage: React.FC<LiveLocationPageProps> = ({ device }) =>
 
         </div>
 
-        {/* Entries Selector */}
         <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
           <div className="flex items-center gap-2">
             <span>Show</span>
@@ -390,7 +368,6 @@ export const LiveLocationPage: React.FC<LiveLocationPageProps> = ({ device }) =>
           <span>Showing {filteredLocations.length} location records</span>
         </div>
 
-        {/* Location History Data Table (OneMonitar Style Alignment) */}
         <div className="overflow-x-auto border border-slate-200 rounded-lg">
           <table className="w-full text-left border-collapse text-xs">
             <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
@@ -469,21 +446,14 @@ export const LiveLocationPage: React.FC<LiveLocationPageProps> = ({ device }) =>
           </table>
         </div>
 
-        {/* Bottom Pagination */}
         <div className="flex items-center justify-between pt-2 text-xs text-slate-500">
-          <span>Showing 1 to {filteredLocations.length} of 142 location points</span>
+          <span>Showing 1 to {filteredLocations.length} of {locations.length} location points</span>
           <div className="flex items-center gap-1">
             <button className="px-2.5 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium disabled:opacity-50" disabled>
               Previous
             </button>
             <button className="px-3 py-1 rounded bg-indigo-600 text-white text-xs font-semibold">
               1
-            </button>
-            <button className="px-3 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium">
-              2
-            </button>
-            <button className="px-3 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium">
-              3
             </button>
             <button className="px-2.5 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium">
               Next

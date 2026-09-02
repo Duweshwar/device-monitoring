@@ -6,10 +6,10 @@ import com.parental.agent.data.local.entity.NormalizedEventEntity
 @Dao
 interface NormalizedEventDao {
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertEvent(event: NormalizedEventEntity)
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertEvents(events: List<NormalizedEventEntity>)
 
     @Query("SELECT * FROM normalized_events WHERE isSynced = 0 ORDER BY timestamp ASC LIMIT :limit")

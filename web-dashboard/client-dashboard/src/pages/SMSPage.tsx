@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { apiService } from '../services/apiService';
 import { 
   MessageSquare, 
   RefreshCw, 
@@ -40,7 +41,7 @@ interface ConfirmModalState {
 }
 
 export const SMSPage: React.FC<SMSPageProps> = ({ device }) => {
-  const [smsLogs, setSmsLogs] = useState<SMSLogItem[]>([
+  const defaultLogs: SMSLogItem[] = [
     {
       id: 'sms_1',
       name: 'Elmore Sipes',
@@ -62,52 +63,43 @@ export const SMSPage: React.FC<SMSPageProps> = ({ device }) => {
       timestamp: '30/08/2026 06:12 pm',
       isStarred: true,
       isBlocked: false
-    },
-    {
-      id: 'sms_3',
-      name: 'Ms. Clara McKenzie',
-      number: '997.601.6935',
-      direction: 'outgoing',
-      simSlot: 'SIM 2 (Jio 5G)',
-      body: 'Thanks for reaching out! I will send the requested document shortly.',
-      timestamp: '30/08/2026 04:45 pm',
-      isStarred: false,
-      isBlocked: false
-    },
-    {
-      id: 'sms_4',
-      name: 'Mrs. Lizeth Auer',
-      number: '482.705.1748',
-      direction: 'incoming',
-      simSlot: 'SIM 1 (Airtel)',
-      body: 'Hey, are we still on for dinner tonight at 8?',
-      timestamp: '30/08/2026 02:34 pm',
-      isStarred: false,
-      isBlocked: false
-    },
-    {
-      id: 'sms_5',
-      name: 'Alex Rivera',
-      number: '98765XX210',
-      direction: 'outgoing',
-      simSlot: 'SIM 1 (Airtel)',
-      body: 'Yes, see you near central park at 5 PM.',
-      timestamp: '29/08/2026 11:22 am',
-      isStarred: true,
-      isBlocked: false
-    },
-    {
-      id: 'sms_6',
-      name: 'Sarah Jenkins',
-      number: '97112XX439',
-      direction: 'incoming',
-      simSlot: 'SIM 2 (Jio 5G)',
-      body: 'Please confirm if you received the delivery package.',
-      timestamp: '29/08/2026 09:15 am',
-      isStarred: false,
-      isBlocked: false
     }
-  ]);
+  ];
+
+  const [smsLogs, setSmsLogs] = useState<SMSLogItem[]>(defaultLogs);
+
+  // Poll live real-time SMS logs from NestJS PostgreSQL backend
+  useEffect(() => {
+    let isMounted = true;
+    const fetchLiveSms = async () => {
+      try {
+        const live = await apiService.getSms(device.id, []);
+        if (isMounted && Array.isArray(live) && live.length > 0) {
+          const formatted: SMSLogItem[] = live.map((s: any, i: number) => ({
+            id: s.id || `live_sms_${i}`,
+            name: s.contactName || 'Target Contact',
+            number: s.phoneNumber || 'Unknown',
+            direction: ((s.direction || 'incoming').toLowerCase()) as any,
+            simSlot: 'SIM 1 (Airtel)',
+            body: s.body || s.messageBody || '',
+            timestamp: new Date(s.timestamp || Date.now()).toLocaleString(),
+            isStarred: false,
+            isBlocked: false
+          }));
+          setSmsLogs(formatted);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch live SMS logs:', err);
+      }
+    };
+
+    fetchLiveSms();
+    const interval = setInterval(fetchLiveSms, 5000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [device.id]);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -143,7 +135,6 @@ export const SMSPage: React.FC<SMSPageProps> = ({ device }) => {
     setSmsLogs(smsLogs.map(s => s.id === id ? { ...s, isStarred: !s.isStarred } : s));
   };
 
-  {/* Block / Unblock Action Confirmation Modal */}
   const requestToggleBlock = (item: SMSLogItem) => {
     const isBlocking = !item.isBlocked;
     setConfirmModal({
@@ -161,7 +152,6 @@ export const SMSPage: React.FC<SMSPageProps> = ({ device }) => {
     });
   };
 
-  {/* Delete Selected Action Confirmation Modal */}
   const requestDeleteSelected = () => {
     if (selectedIds.length === 0) return;
     setConfirmModal({
@@ -178,7 +168,6 @@ export const SMSPage: React.FC<SMSPageProps> = ({ device }) => {
     });
   };
 
-  {/* Delete All Action Confirmation Modal */}
   const requestDeleteAll = () => {
     setConfirmModal({
       isOpen: true,
@@ -259,15 +248,14 @@ export const SMSPage: React.FC<SMSPageProps> = ({ device }) => {
           <p className="text-xs text-slate-500">Incoming & outgoing SMS text messages, SIM slot info, and timestamps for {device.alias}</p>
         </div>
         <span className="px-3 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full text-xs font-semibold">
-          Total Synced: 291 Messages
+          Total Synced: {smsLogs.length} Messages
         </span>
       </div>
 
-      {/* Top Action Toolbar (OneMonitar Style) */}
+      {/* Top Action Toolbar */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           
-          {/* Action Buttons: Refresh, Delete, Delete All, Data Filter */}
           <div className="flex flex-wrap items-center gap-2">
             <button 
               onClick={() => console.log('Refreshing SMS history...')}
@@ -298,7 +286,6 @@ export const SMSPage: React.FC<SMSPageProps> = ({ device }) => {
               <span>Delete All</span>
             </button>
 
-            {/* Show Data Filter Dropdown */}
             <select
               value={filterDirection}
               onChange={(e) => setFilterDirection(e.target.value)}
@@ -310,7 +297,6 @@ export const SMSPage: React.FC<SMSPageProps> = ({ device }) => {
             </select>
           </div>
 
-          {/* Search Box */}
           <div className="relative w-full sm:w-64">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
@@ -324,7 +310,6 @@ export const SMSPage: React.FC<SMSPageProps> = ({ device }) => {
 
         </div>
 
-        {/* Entries Selector */}
         <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
           <div className="flex items-center gap-2">
             <span>Show</span>
@@ -343,7 +328,6 @@ export const SMSPage: React.FC<SMSPageProps> = ({ device }) => {
           <span>Showing {filteredSms.length} SMS messages</span>
         </div>
 
-        {/* SMS Data Table (OneMonitar Style Alignment) */}
         <div className="overflow-x-auto border border-slate-200 rounded-lg">
           <table className="w-full text-left border-collapse text-xs">
             <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
@@ -435,21 +419,14 @@ export const SMSPage: React.FC<SMSPageProps> = ({ device }) => {
           </table>
         </div>
 
-        {/* Bottom Pagination */}
         <div className="flex items-center justify-between pt-2 text-xs text-slate-500">
-          <span>Showing 1 to {filteredSms.length} of 291 entries</span>
+          <span>Showing 1 to {filteredSms.length} of {smsLogs.length} entries</span>
           <div className="flex items-center gap-1">
             <button className="px-2.5 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium disabled:opacity-50" disabled>
               Previous
             </button>
             <button className="px-3 py-1 rounded bg-indigo-600 text-white text-xs font-semibold">
               1
-            </button>
-            <button className="px-3 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium">
-              2
-            </button>
-            <button className="px-3 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium">
-              3
             </button>
             <button className="px-2.5 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium">
               Next

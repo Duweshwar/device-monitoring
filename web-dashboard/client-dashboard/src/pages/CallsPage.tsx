@@ -49,14 +49,8 @@ interface ConfirmModalState {
 
 export const CallsPage: React.FC<CallsPageProps> = ({ device }) => {
   const defaultLogs: CallLogItem[] = [
-    { id: 'cl_1', name: 'Bran', number: '91234XX567', direction: 'outgoing', duration: '', simSlot: 'SIM 1 (Airtel)', cellId: '', lac: '', timestamp: '30/08/2026 08:52 pm', isStarred: true, isBlocked: false, hasAudioRecording: false },
-    { id: 'cl_2', name: 'Bran', number: '91234XX567', direction: 'incoming', duration: '', simSlot: 'SIM 1 (Airtel)', cellId: '', lac: '', timestamp: '30/08/2026 07:02 pm', isStarred: true, isBlocked: false, hasAudioRecording: false },
-    { id: 'cl_3', name: 'Hema', number: '99992XX787', direction: 'outgoing', duration: '', simSlot: 'SIM 2 (Jio 5G)', cellId: '', lac: '', timestamp: '30/08/2026 05:57 pm', isStarred: false, isBlocked: false, hasAudioRecording: false },
-    { id: 'cl_4', name: 'Hema', number: '9234XXX87', direction: 'incoming', duration: '', simSlot: 'SIM 1 (Airtel)', cellId: '', lac: '', timestamp: '30/08/2026 04:59 pm', isStarred: false, isBlocked: false, hasAudioRecording: false },
-    { id: 'cl_5', name: 'Samaira', number: '92342XX454', direction: 'outgoing', duration: '', simSlot: 'SIM 2 (Jio 5G)', cellId: '', lac: '', timestamp: '30/08/2026 02:53 pm', isStarred: false, isBlocked: false, hasAudioRecording: false },
-    { id: 'cl_6', name: 'Bran', number: '91234XX567', direction: 'incoming', duration: '01m 40s', simSlot: 'SIM 1 (Airtel)', cellId: '404-20', lac: '4102', timestamp: '30/08/2026 05:59 am', isStarred: true, isBlocked: false, hasAudioRecording: true },
-    { id: 'cl_7', name: 'Alex Rivera', number: '98765XX210', direction: 'missed', duration: '00m 00s', simSlot: 'SIM 1 (Airtel)', cellId: '404-12', lac: '1209', timestamp: '29/08/2026 11:20 am', isStarred: true, isBlocked: false, hasAudioRecording: false },
-    { id: 'cl_8', name: 'Sarah Jenkins', number: '97112XX439', direction: 'incoming', duration: '05m 22s', simSlot: 'SIM 2 (Jio 5G)', cellId: '404-12', lac: '1209', timestamp: '29/08/2026 09:40 am', isStarred: false, isBlocked: false, hasAudioRecording: true }
+    { id: 'cl_1', name: 'Target Contact', number: '+16505556789', direction: 'incoming', duration: '0m 12s', simSlot: 'SIM 1 (Airtel)', cellId: '', lac: '', timestamp: '30/08/2026 08:52 pm', isStarred: true, isBlocked: false, hasAudioRecording: false },
+    { id: 'cl_2', name: 'Target Contact', number: '6505551212', direction: 'missed', duration: '00m 00s', simSlot: 'SIM 1 (Airtel)', cellId: '', lac: '', timestamp: '30/08/2026 07:02 pm', isStarred: true, isBlocked: false, hasAudioRecording: false }
   ];
 
   const [callLogs, setCallLogs] = useState<CallLogItem[]>(defaultLogs);
@@ -67,18 +61,30 @@ export const CallsPage: React.FC<CallsPageProps> = ({ device }) => {
       try {
         const live = await apiService.getCalls(device.id, []);
         if (isMounted && Array.isArray(live) && live.length > 0) {
-          const formatted: CallLogItem[] = live.map((c: any, i: number) => ({
-            id: c.id || `live_call_${i}`,
-            name: c.contactName || 'Target Contact',
-            number: c.phoneNumber || 'Unknown',
-            direction: ((c.direction || 'incoming').toLowerCase()) as any,
-            duration: c.durationSec ? `${Math.floor(c.durationSec / 60)}m ${c.durationSec % 60}s` : '00m 05s',
-            simSlot: 'SIM 1 (Airtel)',
-            timestamp: new Date(c.timestamp || Date.now()).toLocaleString(),
-            isStarred: false,
-            isBlocked: false,
-            hasAudioRecording: false
-          }));
+          const formatted: CallLogItem[] = live.map((c: any, i: number) => {
+            const rawDir = (c.direction || c.callType || 'incoming').toString().toLowerCase();
+            let normDir: 'incoming' | 'outgoing' | 'missed' = 'incoming';
+            if (rawDir.includes('out') || rawDir === '2') {
+              normDir = 'outgoing';
+            } else if (rawDir.includes('miss') || rawDir === '3' || rawDir.includes('reject')) {
+              normDir = 'missed';
+            } else {
+              normDir = 'incoming';
+            }
+
+            return {
+              id: c.id || `live_call_${i}`,
+              name: c.contactName || 'Target Contact',
+              number: c.phoneNumber || c.number || 'Unknown',
+              direction: normDir,
+              duration: c.durationSec ? `${Math.floor(c.durationSec / 60)}m ${c.durationSec % 60}s` : (c.duration || '00m 05s'),
+              simSlot: 'SIM 1 (Airtel)',
+              timestamp: new Date(c.timestamp || Date.now()).toLocaleString(),
+              isStarred: false,
+              isBlocked: false,
+              hasAudioRecording: false
+            };
+          });
           setCallLogs(formatted);
         }
       } catch (err) {
@@ -132,7 +138,6 @@ export const CallsPage: React.FC<CallsPageProps> = ({ device }) => {
     setPlayingAudioId(playingAudioId === id ? null : id);
   };
 
-  {/* Block / Unblock Action Confirmation Modal */}
   const requestToggleBlock = (item: CallLogItem) => {
     const isBlocking = !item.isBlocked;
     setConfirmModal({
@@ -150,7 +155,6 @@ export const CallsPage: React.FC<CallsPageProps> = ({ device }) => {
     });
   };
 
-  {/* Delete Selected Action Confirmation Modal */}
   const requestDeleteSelected = () => {
     if (selectedIds.length === 0) return;
     setConfirmModal({
@@ -167,7 +171,6 @@ export const CallsPage: React.FC<CallsPageProps> = ({ device }) => {
     });
   };
 
-  {/* Delete All Action Confirmation Modal */}
   const requestDeleteAll = () => {
     setConfirmModal({
       isOpen: true,
@@ -247,15 +250,14 @@ export const CallsPage: React.FC<CallsPageProps> = ({ device }) => {
           <p className="text-xs text-slate-500">Call logs, SIM slot info, call direction, and cell tower telemetry for {device.alias}</p>
         </div>
         <span className="px-3 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full text-xs font-semibold">
-          Total Logs: 142 Calls
+          Total Logs: {callLogs.length} Calls
         </span>
       </div>
 
-      {/* Top Action Toolbar (OneMonitar Style) */}
+      {/* Top Action Toolbar */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           
-          {/* Action Buttons: Refresh, Delete, Delete All, Data Filter */}
           <div className="flex flex-wrap items-center gap-2">
             <button 
               onClick={() => console.log('Refreshing call history...')}
@@ -286,7 +288,6 @@ export const CallsPage: React.FC<CallsPageProps> = ({ device }) => {
               <span>Delete All</span>
             </button>
 
-            {/* Show Data Filter Dropdown */}
             <select
               value={filterDirection}
               onChange={(e) => setFilterDirection(e.target.value)}
@@ -299,7 +300,6 @@ export const CallsPage: React.FC<CallsPageProps> = ({ device }) => {
             </select>
           </div>
 
-          {/* Search Box */}
           <div className="relative w-full sm:w-64">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
@@ -313,7 +313,6 @@ export const CallsPage: React.FC<CallsPageProps> = ({ device }) => {
 
         </div>
 
-        {/* Entries Selector */}
         <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
           <div className="flex items-center gap-2">
             <span>Show</span>
@@ -332,7 +331,6 @@ export const CallsPage: React.FC<CallsPageProps> = ({ device }) => {
           <span>Showing {filteredCalls.length} call logs</span>
         </div>
 
-        {/* Call Logs Data Table (Separated Play vs Block Columns) */}
         <div className="overflow-x-auto border border-slate-200 rounded-lg">
           <table className="w-full text-left border-collapse text-xs">
             <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
@@ -421,7 +419,6 @@ export const CallsPage: React.FC<CallsPageProps> = ({ device }) => {
                       {item.lac ? <span className="text-slate-600">{item.lac}</span> : <span className="text-slate-300">--</span>}
                     </td>
 
-                    {/* Dedicated Column 1: Audio Playback (Circular Icon-only Button) */}
                     <td className="p-3 text-center">
                       {item.hasAudioRecording && !isNotConnected ? (
                         <button
@@ -440,7 +437,6 @@ export const CallsPage: React.FC<CallsPageProps> = ({ device }) => {
                       )}
                     </td>
 
-                    {/* Dedicated Column 2: Security Action (Block / Unblock Button) */}
                     <td className="p-3 text-center">
                       <button
                         onClick={() => requestToggleBlock(item)}
@@ -471,21 +467,14 @@ export const CallsPage: React.FC<CallsPageProps> = ({ device }) => {
           </table>
         </div>
 
-        {/* Bottom Pagination */}
         <div className="flex items-center justify-between pt-2 text-xs text-slate-500">
-          <span>Showing 1 to {filteredCalls.length} of 142 call logs</span>
+          <span>Showing 1 to {filteredCalls.length} of {callLogs.length} call logs</span>
           <div className="flex items-center gap-1">
             <button className="px-2.5 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium disabled:opacity-50" disabled>
               Previous
             </button>
             <button className="px-3 py-1 rounded bg-indigo-600 text-white text-xs font-semibold">
               1
-            </button>
-            <button className="px-3 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium">
-              2
-            </button>
-            <button className="px-3 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium">
-              3
             </button>
             <button className="px-2.5 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium">
               Next

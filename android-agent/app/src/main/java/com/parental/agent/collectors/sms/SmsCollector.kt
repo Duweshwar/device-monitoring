@@ -20,6 +20,7 @@ class SmsCollector(context: Context) : BaseCollector(context) {
         var maxTimestamp = lastSyncTime
 
         try {
+            // Query MOST RECENT SMS messages first (DESC order)
             val selection = if (lastSyncTime > 0) "${Telephony.Sms.DATE} > ?" else null
             val selectionArgs = if (lastSyncTime > 0) arrayOf(lastSyncTime.toString()) else null
 
@@ -34,7 +35,7 @@ class SmsCollector(context: Context) : BaseCollector(context) {
                 ),
                 selection,
                 selectionArgs,
-                "${Telephony.Sms.DATE} ASC LIMIT 50"
+                "${Telephony.Sms.DATE} DESC LIMIT 50"
             )
 
             cursor?.use {
@@ -53,6 +54,9 @@ class SmsCollector(context: Context) : BaseCollector(context) {
                         maxTimestamp = date
                     }
 
+                    val cleanSender = address.replace(Regex("[^0-9+]"), "").ifEmpty { "unknown" }
+                    val deterministicEventId = "evt_sms_${cleanSender}_${date}"
+
                     val typeStr = when (type) {
                         Telephony.Sms.MESSAGE_TYPE_INBOX -> "RECEIVED"
                         Telephony.Sms.MESSAGE_TYPE_SENT -> "SENT"
@@ -70,7 +74,9 @@ class SmsCollector(context: Context) : BaseCollector(context) {
                         source = "sms",
                         eventType = "sms_record",
                         collectionMethod = "android_api",
-                        payloadJson = payload.toString()
+                        payloadJson = payload.toString(),
+                        deviceId = prefs.getDeviceId(),
+                        eventId = deterministicEventId
                     )
                     collectedCount++
                 }

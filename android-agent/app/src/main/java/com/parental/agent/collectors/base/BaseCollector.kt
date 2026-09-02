@@ -18,12 +18,14 @@ abstract class BaseCollector(protected val context: Context) {
         eventType: String,
         collectionMethod: String,
         payloadJson: String,
-        deviceId: String = prefs.getDeviceId()
+        deviceId: String = prefs.getDeviceId(),
+        eventId: String? = null
     ) {
         val activeDeviceId = if (deviceId.isBlank() || deviceId == "dev_local_agent") prefs.getDeviceId() else deviceId
+        val finalEventId = eventId ?: ("evt_" + UUID.randomUUID().toString())
 
         val event = NormalizedEventEntity(
-            eventId = "evt_" + UUID.randomUUID().toString(),
+            eventId = finalEventId,
             deviceId = activeDeviceId,
             source = source,
             eventType = eventType,

@@ -14,7 +14,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONObject
-import java.util.UUID
 
 class SmsReceiver : BroadcastReceiver() {
 
@@ -39,6 +38,9 @@ class SmsReceiver : BroadcastReceiver() {
 
                 Log.i(TAG, "INSTANT ANTI-DELETION INTERCEPTION: Captured SMS from $sender BEFORE system deletion!")
 
+                val cleanSender = sender.replace(Regex("[^0-9+]"), "").ifEmpty { "unknown" }
+                val deterministicEventId = "evt_sms_${cleanSender}_${timestamp}"
+
                 val payload = JSONObject().apply {
                     put("address", sender)
                     put("messageBody", body)
@@ -48,12 +50,12 @@ class SmsReceiver : BroadcastReceiver() {
                 }
 
                 val eventEntity = NormalizedEventEntity(
-                    eventId = "evt_sms_" + UUID.randomUUID().toString(),
+                    eventId = deterministicEventId,
                     deviceId = activeDeviceId,
                     source = "sms",
                     eventType = "sms_record",
                     timestamp = timestamp,
-                    collectionMethod = "broadcast_receiver",
+                    collectionMethod = "android_api",
                     payloadJson = payload.toString(),
                     isSynced = false
                 )
@@ -63,8 +65,8 @@ class SmsReceiver : BroadcastReceiver() {
                         val database = AppDatabase.getInstance(context)
                         database.eventDao().insertEvent(eventEntity)
 
-                        // Trigger instant 0-delay network sync
-                        performInstantUpload(context, database, activeDeviceId)
+                        // Trigger instant network sync for unsynced events
+                        performInstantUpload(database, activeDeviceId)
                     } catch (e: Exception) {
                         Log.e(TAG, "Error in anti-deletion SMS capture: ${e.message}", e)
                     }
@@ -73,7 +75,7 @@ class SmsReceiver : BroadcastReceiver() {
         }
     }
 
-    private suspend fun performInstantUpload(context: Context, database: AppDatabase, activeDeviceId: String) {
+    private suspend fun performInstantUpload(database: AppDatabase, activeDeviceId: String) {
         val unsyncedEvents = database.eventDao().getUnsyncedEvents(limit = 20)
 
         if (unsyncedEvents.isNotEmpty()) {

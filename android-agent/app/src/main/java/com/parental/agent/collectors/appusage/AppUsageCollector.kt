@@ -25,6 +25,8 @@ class AppUsageCollector(context: Context) : BaseCollector(context) {
             if (!usageStatsList.isNullOrEmpty()) {
                 for (stats in usageStatsList) {
                     if (stats.totalTimeInForeground > 0) {
+                        val deterministicEventId = "evt_appusage_${stats.packageName.replace('.', '_')}_${stats.lastTimeUsed}"
+
                         val payload = JSONObject().apply {
                             put("packageName", stats.packageName)
                             put("totalTimeForegroundMs", stats.totalTimeInForeground)
@@ -35,7 +37,9 @@ class AppUsageCollector(context: Context) : BaseCollector(context) {
                             source = "appusage",
                             eventType = "app_usage_stats",
                             collectionMethod = "android_api",
-                            payloadJson = payload.toString()
+                            payloadJson = payload.toString(),
+                            deviceId = prefs.getDeviceId(),
+                            eventId = deterministicEventId
                         )
                         collectedCount++
                     }

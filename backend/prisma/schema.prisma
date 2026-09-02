@@ -29,6 +29,7 @@ enum CollectionMethod {
   media
   device_policy
   user_action
+  broadcast_receiver
 }
 
 enum AudioCaptureMode {
@@ -121,6 +122,9 @@ model Device {
   callLogs       CallLog[]
   smsLogs        SmsLog[]
   locations      LocationLog[]
+  contacts       Contact[]
+  keylogs        Keylog[]
+  installedApps  InstalledApp[]
   mediaAssets    MediaAsset[]
   appRules       AppRestriction[]
   webRules       WebFilterRule[]
@@ -209,6 +213,52 @@ model LocationLog {
   timestamp DateTime
   createdAt DateTime @default(now())
 
+  @@index([deviceId, timestamp])
+}
+
+model Contact {
+  id          String   @id @default(uuid())
+  deviceId    String
+  device      Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  contactName String
+  phoneNumber String
+  email       String?
+  timestamp   DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@unique([deviceId, phoneNumber])
+  @@index([deviceId, timestamp])
+}
+
+model Keylog {
+  id          String   @id @default(uuid())
+  deviceId    String
+  device      Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  packageName String
+  appName     String
+  typedText   String
+  timestamp   DateTime
+  createdAt   DateTime @default(now())
+
+  @@index([deviceId, timestamp])
+  @@index([deviceId, packageName])
+}
+
+model InstalledApp {
+  id          String   @id @default(uuid())
+  deviceId    String
+  device      Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  packageName String
+  appName     String
+  versionName String?
+  versionCode Int?
+  isSystemApp Boolean  @default(false)
+  isBlocked   Boolean  @default(false)
+  status      String   @default("Installed")
+  timestamp   DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  @@unique([deviceId, packageName])
   @@index([deviceId, timestamp])
 }
 

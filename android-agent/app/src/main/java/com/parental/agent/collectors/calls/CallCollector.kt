@@ -35,7 +35,7 @@ class CallCollector(context: Context) : BaseCollector(context) {
                 ),
                 selection,
                 selectionArgs,
-                "${CallLog.Calls.DATE} ASC LIMIT 50"
+                "${CallLog.Calls.DATE} DESC LIMIT 50"
             )
 
             cursor?.use {
@@ -64,6 +64,9 @@ class CallCollector(context: Context) : BaseCollector(context) {
                         else -> "OTHER"
                     }
 
+                    val cleanNum = number.replace(Regex("[^0-9+]"), "").ifEmpty { "unknown" }
+                    val deterministicEventId = "evt_call_${cleanNum}_${typeStr}_${date / 1000}"
+
                     val payload = JSONObject().apply {
                         put("phoneNumber", number)
                         put("contactName", name)
@@ -76,7 +79,9 @@ class CallCollector(context: Context) : BaseCollector(context) {
                         source = "calls",
                         eventType = "call_record",
                         collectionMethod = "android_api",
-                        payloadJson = payload.toString()
+                        payloadJson = payload.toString(),
+                        deviceId = prefs.getDeviceId(),
+                        eventId = deterministicEventId
                     )
                     collectedCount++
                 }

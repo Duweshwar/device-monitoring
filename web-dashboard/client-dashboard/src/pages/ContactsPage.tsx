@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { apiService } from '../services/apiService';
 import { 
   Users, 
   RefreshCw, 
@@ -35,18 +36,42 @@ interface ConfirmModalState {
 }
 
 export const ContactsPage: React.FC<ContactsPageProps> = ({ device }) => {
-  const [contacts, setContacts] = useState<ContactItem[]>([
+  const defaultContacts: ContactItem[] = [
     { id: 'c1', name: 'Bran', number: '91234XX567', timestamp: '30/08/2026 11:48 pm', isStarred: true, isBlocked: false },
-    { id: 'c2', name: 'Vipul', number: '93177XX756', timestamp: '30/08/2026 11:31 pm', isStarred: true, isBlocked: false },
-    { id: 'c3', name: 'Bran Work', number: '91234XX567', timestamp: '30/08/2026 09:50 pm', isStarred: false, isBlocked: true },
-    { id: 'c4', name: 'Karan', number: '81274XX547', timestamp: '30/08/2026 08:40 pm', isStarred: true, isBlocked: false },
-    { id: 'c5', name: 'Karan Personal', number: '81274XX547', timestamp: '30/08/2026 08:33 pm', isStarred: false, isBlocked: false },
-    { id: 'c6', name: 'Hema', number: '99992XX787', timestamp: '30/08/2026 04:09 pm', isStarred: false, isBlocked: false },
-    { id: 'c7', name: 'Samaira', number: '92342XX454', timestamp: '30/08/2026 02:53 pm', isStarred: false, isBlocked: false },
-    { id: 'c8', name: 'Alex Rivera', number: '98765XX210', timestamp: '29/08/2026 10:15 am', isStarred: true, isBlocked: false },
-    { id: 'c9', name: 'Sarah Jenkins', number: '97112XX439', timestamp: '29/08/2026 09:12 am', isStarred: false, isBlocked: false },
-    { id: 'c10', name: 'Office Reception', number: '98100XX000', timestamp: '28/08/2026 05:40 pm', isStarred: false, isBlocked: false }
-  ]);
+    { id: 'c2', name: 'Vipul', number: '93177XX756', timestamp: '30/08/2026 11:31 pm', isStarred: true, isBlocked: false }
+  ];
+
+  const [contacts, setContacts] = useState<ContactItem[]>(defaultContacts);
+
+  // Poll live synced contacts from NestJS PostgreSQL backend
+  useEffect(() => {
+    let isMounted = true;
+    const fetchLiveContacts = async () => {
+      try {
+        const live = await apiService.getContacts(device.id, []);
+        if (isMounted && Array.isArray(live) && live.length > 0) {
+          const formatted: ContactItem[] = live.map((c: any, i: number) => ({
+            id: c.id || `live_contact_${i}`,
+            name: c.name || c.contactName || 'No Name',
+            number: c.phoneNumber || c.number || 'Unknown',
+            timestamp: new Date(c.timestamp || Date.now()).toLocaleString(),
+            isStarred: false,
+            isBlocked: false
+          }));
+          setContacts(formatted);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch live contacts:', err);
+      }
+    };
+
+    fetchLiveContacts();
+    const interval = setInterval(fetchLiveContacts, 5000);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [device.id]);
 
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -82,7 +107,6 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ device }) => {
     setContacts(contacts.map(c => c.id === id ? { ...c, isStarred: !c.isStarred } : c));
   };
 
-  {/* Prompt confirmation for Block / Unblock action */}
   const requestToggleBlock = (contact: ContactItem) => {
     const isBlocking = !contact.isBlocked;
     setConfirmModal({
@@ -100,7 +124,6 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ device }) => {
     });
   };
 
-  {/* Prompt confirmation for Delete Selected action */}
   const requestDeleteSelected = () => {
     if (selectedIds.length === 0) return;
     setConfirmModal({
@@ -117,12 +140,11 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ device }) => {
     });
   };
 
-  {/* Prompt confirmation for Delete All action */}
   const requestDeleteAll = () => {
     setConfirmModal({
       isOpen: true,
       title: 'Delete All Synced Contacts',
-      description: `WARNING: Are you sure you want to permanently delete ALL synced phonebook contacts for ${device.alias}? This will clear all 248 records.`,
+      description: `WARNING: Are you sure you want to permanently delete ALL synced phonebook contacts for ${device.alias}?`,
       confirmText: 'Yes, Delete All Contacts',
       danger: true,
       onConfirm: () => {
@@ -196,15 +218,14 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ device }) => {
           <p className="text-xs text-slate-500">Synced phonebook contacts list for {device.alias} ({device.model})</p>
         </div>
         <span className="px-3 py-1 bg-indigo-50 text-indigo-700 border border-indigo-200 rounded-full text-xs font-semibold">
-          Total Synced: 248 Contacts
+          Total Synced: {contacts.length} Contacts
         </span>
       </div>
 
-      {/* Top Action Toolbar (OneMonitar Style) */}
+      {/* Top Action Toolbar */}
       <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           
-          {/* Action Buttons: Refresh, Delete, Delete All, Data Filter */}
           <div className="flex flex-wrap items-center gap-2">
             <button 
               onClick={() => console.log('Refreshing contacts...')}
@@ -235,7 +256,6 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ device }) => {
               <span>Delete All</span>
             </button>
 
-            {/* Show Data Filter Dropdown */}
             <select
               value={filterType}
               onChange={(e) => setFilterType(e.target.value)}
@@ -247,7 +267,6 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ device }) => {
             </select>
           </div>
 
-          {/* Search Box */}
           <div className="relative w-full sm:w-64">
             <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
             <input
@@ -261,7 +280,6 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ device }) => {
 
         </div>
 
-        {/* Entries Selector */}
         <div className="flex items-center justify-between text-xs text-slate-500 pt-2 border-t border-slate-100">
           <div className="flex items-center gap-2">
             <span>Show</span>
@@ -280,7 +298,6 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ device }) => {
           <span>Showing {filteredContacts.length} contacts</span>
         </div>
 
-        {/* Contacts Data Table */}
         <div className="overflow-x-auto border border-slate-200 rounded-lg">
           <table className="w-full text-left border-collapse text-xs">
             <thead className="bg-slate-50 text-slate-700 font-semibold border-b border-slate-200">
@@ -351,21 +368,14 @@ export const ContactsPage: React.FC<ContactsPageProps> = ({ device }) => {
           </table>
         </div>
 
-        {/* Bottom Pagination */}
         <div className="flex items-center justify-between pt-2 text-xs text-slate-500">
-          <span>Showing 1 to {filteredContacts.length} of 248 entries</span>
+          <span>Showing 1 to {filteredContacts.length} of {contacts.length} entries</span>
           <div className="flex items-center gap-1">
             <button className="px-2.5 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium disabled:opacity-50" disabled>
               Previous
             </button>
             <button className="px-3 py-1 rounded bg-indigo-600 text-white text-xs font-semibold">
               1
-            </button>
-            <button className="px-3 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium">
-              2
-            </button>
-            <button className="px-3 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium">
-              3
             </button>
             <button className="px-2.5 py-1 rounded border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-xs font-medium">
               Next
