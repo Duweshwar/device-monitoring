@@ -164,11 +164,18 @@ export const InstalledAppsPage: React.FC<InstalledAppsPageProps> = ({ device }) 
         : `Are you sure you want to lift the block on ${item.label} (${item.packageName}) on ${device.alias}?`,
       confirmText: isBlocking ? 'Yes, Enforce Block' : 'Yes, Lift Block',
       danger: isBlocking,
-      onConfirm: () => {
+      onConfirm: async () => {
+        const newBlockedState = !item.isBlocked;
+        await apiService.toggleAppBlock({
+          deviceId: device.id,
+          packageName: item.packageName,
+          appName: item.label,
+          isBlocked: newBlockedState
+        });
         setApps(apps.map(a => a.id === item.id ? { 
           ...a, 
-          isBlocked: !a.isBlocked, 
-          status: !a.isBlocked ? 'Removed' : 'Installed' 
+          isBlocked: newBlockedState, 
+          status: newBlockedState ? 'Removed' : 'Installed' 
         } : a));
         setConfirmModal(prev => ({ ...prev, isOpen: false }));
       }

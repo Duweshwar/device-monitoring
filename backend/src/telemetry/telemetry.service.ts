@@ -458,10 +458,19 @@ export class TelemetryService {
   async getInstalledApps(deviceId: string) {
     try {
       const dedicated: any[] = await this.prisma.$queryRaw`
-        SELECT "id", "packageName", "appName" AS label, "versionName" AS version, "status", "isBlocked", "isSystemApp", "timestamp"
-        FROM "InstalledApp"
-        WHERE "deviceId" = ${deviceId}
-        ORDER BY "appName" ASC;
+        SELECT 
+          a."id", 
+          a."packageName", 
+          a."appName" AS label, 
+          a."versionName" AS version, 
+          a."status", 
+          COALESCE(r."isBlocked", false) AS "isBlocked", 
+          a."isSystemApp", 
+          a."timestamp"
+        FROM "InstalledApp" a
+        LEFT JOIN "AppRestriction" r ON r."deviceId" = a."deviceId" AND r."packageName" = a."packageName"
+        WHERE a."deviceId" = ${deviceId}
+        ORDER BY a."appName" ASC;
       `;
       if (dedicated && dedicated.length > 0) {
         return dedicated.map((a) => ({
@@ -516,10 +525,18 @@ export class TelemetryService {
   async getWebHistory(deviceId: string) {
     try {
       const dedicated: any[] = await this.prisma.$queryRaw`
-        SELECT "id", "title", "url", "domain", "visitCount", "isBlocked", "timestamp"
-        FROM "WebHistory"
-        WHERE "deviceId" = ${deviceId}
-        ORDER BY "timestamp" DESC
+        SELECT 
+          w."id", 
+          w."title", 
+          w."url", 
+          w."domain", 
+          w."visitCount", 
+          COALESCE(r."action" = 'BLOCK', false) AS "isBlocked", 
+          w."timestamp"
+        FROM "WebHistory" w
+        LEFT JOIN "WebFilterRule" r ON r."deviceId" = w."deviceId" AND r."domainOrUrl" = w."domain"
+        WHERE w."deviceId" = ${deviceId}
+        ORDER BY w."timestamp" DESC
         LIMIT 200;
       `;
       if (dedicated && dedicated.length > 0) {

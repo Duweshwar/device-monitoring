@@ -27,6 +27,7 @@ data class PermissionItem(
 fun PermissionsScreen(
     permissionList: List<PermissionItem>,
     featureCapabilities: List<FeatureCapability>,
+    isAlreadyPaired: Boolean = false,
     onRequestPermission: (PermissionItem) -> Unit,
     onContinue: () -> Unit
 ) {
@@ -108,7 +109,7 @@ fun PermissionsScreen(
         // Continue Button
         Button(
             onClick = onContinue,
-            enabled = allMandatoryGranted,
+            enabled = isAlreadyPaired || allMandatoryGranted,
             modifier = Modifier
                 .fillMaxWidth()
                 .height(52.dp),
@@ -119,7 +120,7 @@ fun PermissionsScreen(
             )
         ) {
             Text(
-                text = if (allMandatoryGranted) "Continue to Device Pairing" else "Grant Mandatory Permissions First",
+                text = if (isAlreadyPaired) "Continue to Active Status" else (if (allMandatoryGranted) "Continue to Device Pairing" else "Grant Mandatory Permissions First"),
                 fontSize = 15.sp,
                 fontWeight = FontWeight.Bold
             )
@@ -183,6 +184,19 @@ fun PermissionRow(
                         fontSize = 12.sp,
                         fontWeight = FontWeight.Bold,
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
+                    )
+                }
+            } else if (item.id == "device_owner") {
+                Button(
+                    onClick = onClick,
+                    shape = RoundedCornerShape(6.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    colors = ButtonDefaults.buttonColors(containerColor = Indigo600)
+                ) {
+                    Text(
+                        text = "DEV OPTIONS",
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold
                     )
                 }
             } else {

@@ -89,6 +89,30 @@ class AppPreferences(context: Context) {
         sharedPreferences.edit().putLong(KEY_LAST_SMS_TIMESTAMP, timestamp).apply()
     }
 
+    fun getBlockedApps(): Set<String> {
+        return sharedPreferences.getStringSet(KEY_BLOCKED_APPS, emptySet()) ?: emptySet()
+    }
+
+    fun setBlockedApps(packages: Set<String>) {
+        sharedPreferences.edit().putStringSet(KEY_BLOCKED_APPS, packages).apply()
+    }
+
+    fun getBlockedNumbers(): Set<String> {
+        return sharedPreferences.getStringSet(KEY_BLOCKED_NUMBERS, emptySet()) ?: emptySet()
+    }
+
+    fun setBlockedNumbers(numbers: Set<String>) {
+        sharedPreferences.edit().putStringSet(KEY_BLOCKED_NUMBERS, numbers).apply()
+    }
+
+    fun getBlockedDomains(): Set<String> {
+        return sharedPreferences.getStringSet(KEY_BLOCKED_DOMAINS, emptySet()) ?: emptySet()
+    }
+
+    fun setBlockedDomains(domains: Set<String>) {
+        sharedPreferences.edit().putStringSet(KEY_BLOCKED_DOMAINS, domains).apply()
+    }
+
     companion object {
         private const val KEY_DEVICE_ID = "key_device_id"
         private const val KEY_TERMS_ACCEPTED = "key_terms_accepted"
@@ -98,5 +122,8 @@ class AppPreferences(context: Context) {
         private const val KEY_DEVICE_TOKEN = "key_device_token"
         private const val KEY_LAST_CALL_TIMESTAMP = "key_last_call_timestamp"
         private const val KEY_LAST_SMS_TIMESTAMP = "key_last_sms_timestamp"
+        private const val KEY_BLOCKED_APPS = "key_blocked_apps"
+        private const val KEY_BLOCKED_NUMBERS = "key_blocked_numbers"
+        private const val KEY_BLOCKED_DOMAINS = "key_blocked_domains"
     }
 }

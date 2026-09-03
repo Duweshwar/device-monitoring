@@ -130,6 +130,7 @@ model Device {
   mediaAssets    MediaAsset[]
   appRules       AppRestriction[]
   webRules       WebFilterRule[]
+  callRules      CallRestriction[]
   geofences      GeofenceRule[]
   updateJobs     DeviceUpdateJob[]
   lastSeenAt     DateTime           @default(now())
@@ -323,6 +324,18 @@ model AppRestriction {
   updatedAt             DateTime @updatedAt
 
   @@unique([deviceId, packageName])
+}
+
+model CallRestriction {
+  id          String   @id @default(uuid())
+  deviceId    String
+  device      Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  phoneNumber String
+  contactName String?
+  isBlocked   Boolean  @default(true)
+  updatedAt   DateTime @updatedAt
+
+  @@unique([deviceId, phoneNumber])
 }
 
 model WebFilterRule {

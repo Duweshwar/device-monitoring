@@ -54,7 +54,13 @@ export const CallsPage: React.FC<CallsPageProps> = ({ device }) => {
     let isMounted = true;
     const fetchLiveCalls = async () => {
       try {
-        const live = await apiService.getCalls(device.id, []);
+        const [live, callRules] = await Promise.all([
+          apiService.getCalls(device.id, []),
+          apiService.getCallRules(device.id)
+        ]);
+
+        const blockedSet = new Set((callRules || []).filter((r: any) => r.isBlocked).map((r: any) => r.phoneNumber));
+
         if (isMounted && Array.isArray(live) && live.length > 0) {
           const formatted: CallLogItem[] = live.map((c: any, i: number) => {
             const rawDir = (c.direction || c.callType || 'incoming').toString().toLowerCase();
@@ -68,17 +74,18 @@ export const CallsPage: React.FC<CallsPageProps> = ({ device }) => {
             }
 
             const durationSec = Number(c.durationSec || c.durationSeconds || 0);
+            const num = c.phoneNumber || c.number || 'Unknown';
 
             return {
               id: c.id || `live_call_${i}`,
               name: c.contactName || c.name || 'Target Contact',
-              number: c.phoneNumber || c.number || 'Unknown',
+              number: num,
               direction: normDir,
               duration: durationSec > 0 ? `${Math.floor(durationSec / 60)}m ${durationSec % 60}s` : '00m 00s',
               simSlot: c.simSlot || 'SIM 1',
               timestamp: new Date(c.timestamp || Date.now()).toLocaleString(),
               isStarred: false,
-              isBlocked: false,
+              isBlocked: blockedSet.has(num) || Boolean(c.isBlocked),
               hasAudioRecording: Boolean(c.recordingUrl || c.recordingId || c.hasAudioRecording)
             };
           });
@@ -145,8 +152,15 @@ export const CallsPage: React.FC<CallsPageProps> = ({ device }) => {
         : `Are you sure you want to unblock calls from ${item.name} (${item.number}) on ${device.alias}?`,
       confirmText: isBlocking ? 'Yes, Block Number' : 'Yes, Unblock Number',
       danger: isBlocking,
-      onConfirm: () => {
-        setCallLogs(callLogs.map(c => c.id === item.id ? { ...c, isBlocked: !c.isBlocked } : c));
+      onConfirm: async () => {
+        const newBlockedState = !item.isBlocked;
+        await apiService.toggleCallBlock({
+          deviceId: device.id,
+          phoneNumber: item.number,
+          contactName: item.name,
+          isBlocked: newBlockedState
+        });
+        setCallLogs(callLogs.map(c => c.id === item.id ? { ...c, isBlocked: newBlockedState } : c));
         setConfirmModal(prev => ({ ...prev, isOpen: false }));
       }
     });

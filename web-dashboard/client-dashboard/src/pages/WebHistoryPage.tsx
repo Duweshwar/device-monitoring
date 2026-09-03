@@ -62,18 +62,27 @@ export const WebHistoryPage: React.FC<WebHistoryPageProps> = ({ device }) => {
     let isMounted = true;
     const fetchLiveHistory = async () => {
       try {
-        const live = await apiService.getWebHistory(device.id, []);
+        const [live, webRules] = await Promise.all([
+          apiService.getWebHistory(device.id, []),
+          apiService.getWebRules(device.id)
+        ]);
+
+        const blockedSet = new Set((webRules || []).filter((r: any) => r.isBlocked).map((r: any) => r.domain));
+
         if (isMounted && Array.isArray(live) && live.length > 0) {
-          const formatted: WebHistoryItem[] = live.map((w: any, i: number) => ({
-            id: w.id || `live_wh_${i}`,
-            title: w.title || w.domain || 'Web Page',
-            url: w.url || '',
-            domain: w.domain || (w.url ? new URL(w.url.startsWith('http') ? w.url : `https://${w.url}`).hostname : ''),
-            visitCount: w.visitCount || 1,
-            timestamp: new Date(w.timestamp || Date.now()).toLocaleString(),
-            isStarred: Boolean(w.isStarred),
-            isBlocked: Boolean(w.isBlocked)
-          }));
+          const formatted: WebHistoryItem[] = live.map((w: any, i: number) => {
+            const domainStr = w.domain || (w.url ? new URL(w.url.startsWith('http') ? w.url : `https://${w.url}`).hostname : '');
+            return {
+              id: w.id || `live_wh_${i}`,
+              title: w.title || domainStr || 'Web Page',
+              url: w.url || '',
+              domain: domainStr,
+              visitCount: w.visitCount || 1,
+              timestamp: new Date(w.timestamp || Date.now()).toLocaleString(),
+              isStarred: Boolean(w.isStarred),
+              isBlocked: blockedSet.has(domainStr) || Boolean(w.isBlocked)
+            };
+          });
           setWebHistory(formatted);
         }
       } catch (err) {
@@ -129,12 +138,18 @@ export const WebHistoryPage: React.FC<WebHistoryPageProps> = ({ device }) => {
       isOpen: true,
       title: isBlocking ? `Block Domain: ${item.domain}` : `Unblock Domain: ${item.domain}`,
       description: isBlocking
-        ? `Are you sure you want to enforce a Local VPN Firewall block on domain ${item.domain} for ${device.alias}? All browser traffic to this domain will be blocked.`
+        ? `Are you sure you want to enforce a web filter block on domain ${item.domain} for ${device.alias}? All browser access to this domain will be blocked.`
         : `Are you sure you want to unblock access to ${item.domain} for ${device.alias}?`,
       confirmText: isBlocking ? 'Yes, Enforce Domain Block' : 'Yes, Lift Domain Block',
       danger: isBlocking,
-      onConfirm: () => {
-        setWebHistory(webHistory.map(w => w.id === item.id ? { ...w, isBlocked: !w.isBlocked } : w));
+      onConfirm: async () => {
+        const newBlockedState = !item.isBlocked;
+        await apiService.toggleWebBlock({
+          deviceId: device.id,
+          domain: item.domain,
+          isBlocked: newBlockedState
+        });
+        setWebHistory(webHistory.map(w => w.id === item.id ? { ...w, isBlocked: newBlockedState } : w));
         setConfirmModal(prev => ({ ...prev, isOpen: false }));
       }
     });

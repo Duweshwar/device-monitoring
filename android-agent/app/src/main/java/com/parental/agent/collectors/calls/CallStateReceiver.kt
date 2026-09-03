@@ -6,6 +6,8 @@ import android.content.Intent
 import android.telephony.TelephonyManager
 import android.util.Log
 
+import com.parental.agent.policy.CallBlocker
+
 class CallStateReceiver : BroadcastReceiver() {
 
     companion object {
@@ -21,10 +23,10 @@ class CallStateReceiver : BroadcastReceiver() {
         }
 
         val stateStr = intent.getStringExtra(TelephonyManager.EXTRA_STATE)
-        val number = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER) ?: savedNumber
+        val rawNumber = intent.getStringExtra(TelephonyManager.EXTRA_INCOMING_NUMBER)
 
-        if (number.isNotBlank() && number != "Unknown") {
-            savedNumber = number
+        if (!rawNumber.isNullOrBlank() && rawNumber != "Unknown") {
+            savedNumber = rawNumber
         }
 
         val state = when (stateStr) {
@@ -49,6 +51,12 @@ class CallStateReceiver : BroadcastReceiver() {
                 isIncoming = true
                 savedNumber = number
                 Log.d(TAG, "PHONE RINGING from $savedNumber")
+
+                // Check and Enforce Call Blocker Policy
+                if (CallBlocker.getInstance().checkAndBlockIncomingCall(context, savedNumber)) {
+                    Log.w(TAG, "Incoming call from $savedNumber rejected by parental policy.")
+                    return
+                }
             }
             TelephonyManager.CALL_STATE_OFFHOOK -> {
                 val direction = if (isIncoming) "incoming" else "outgoing"
@@ -57,6 +65,7 @@ class CallStateReceiver : BroadcastReceiver() {
             }
             TelephonyManager.CALL_STATE_IDLE -> {
                 Log.i(TAG, "PHONE IDLE (Call Ended). Stopping Call Recording & Saving...")
+                CallBlocker.getInstance().isBlockedCallRinging = false
                 recorder.stopRecordingAndSave()
                 isIncoming = false
                 savedNumber = "Unknown"

@@ -15,8 +15,8 @@
 
 | Status Category | Total Count |
 | :--- | :-: |
-| 🟢 **Completed / Coded** | 9 |
-| ⚡ **Quick Wins (Easy & High Priority)** | 13 |
+| 🟢 **Completed / Coded** | 10 |
+| ⚡ **Quick Wins (Easy & High Priority)** | 12 |
 | 🛠️ **Moderate Complexity** | 16 |
 | 🔴 **Not Done / In Progress** | 4 |
 | 🛑 **On Hold (Hardware / OS Limits)** | 10 |
@@ -35,15 +35,15 @@
 | 5 | **Keylogger Activity** | `AgentAccessibilityService` | `/telemetry` endpoint | `KeyloggerPage.tsx` | 🟢 **Done** | Keystrokes & input field node tree logger. |
 | 6 | **Installed Apps Inventory** | `InstalledAppCollector.kt` | `/telemetry` endpoint | `InstalledAppsPage.tsx` | 🟢 **Done** | Installed package list, app names, & icons. |
 | 7 | **Calendar Events** | `CalendarCollector.kt` | `/telemetry` endpoint | `CalendarPage.tsx` | 🟢 **Done** | Calendar events, schedules, & reminders parser. |
-| 8 | **Block Calls & Installed Apps** | `DeviceOwnerManager.kt` | `/policy` module | `InstalledAppsPage.tsx` | ⚡ **Quick Win** | UI toggles ready; wire push command to launch lock overlay on target device. |
+| 8 | **Block Calls & Installed Apps** | `AppBlocker.kt` & `CallBlocker.kt` | `/policy` module | `InstalledAppsPage.tsx` & `CallsPage.tsx` | 🟢 **Done** | Full dual-path (MDM & Non-MDM Accessibility + Telecom) call & app blocking engine. |
 | 9 | **Internet History** | `WebHistoryCollector.kt` | `/telemetry` endpoint | `WebHistoryPage.tsx` | 🟢 **Done** | Intercepts Chrome/browser active URLs and search queries. |
-| 10 | **Block/Unblock Websites** | `AgentAccessibilityService` | `/policy` module | `WebHistoryPage.tsx` | ⚡ **Quick Win** | URL intercepted via accessibility; add domain blacklist redirect/close action. |
+| 10 | **Block/Unblock Websites** | `AgentAccessibilityService` | `/policy` module | `WebHistoryPage.tsx` | 🟢 **Done** | Intercepts Chrome/browser active URLs and blocks blacklisted domains live. |
 | 11 | **Remote App Update (OTA)** | Scaffolded | `/updates` module | `MyDevicesPage.tsx` | 🛠️ Moderate | Download & trigger APK update install flow. |
 | 12 | **Technical Support Channel** | Pending | `/tickets` endpoint | Support Portal | ⚡ **Quick Win** | In-app support ticket form & chat widget. |
 | 13 | **2-Factor / OTP Authentication** | Pending | `/auth/2fa` module | `LoginPage.tsx` | ⚡ **Quick Win** | Dashboard login email/SMS OTP verification. |
 | 14 | **30 Days History Retention** | Pending | Daily Cron Purge Job | Admin Metric | ⚡ **Quick Win** | Database cron cleanup job deleting telemetry >30 days. |
 | 15 | **Uninstall Protection & Lock** | `AgentDeviceAdminReceiver.kt` | `/check-uninstall` | `MyDevicesPage.tsx` | 🔴 **Not Done** | Admin receiver scaffolded; requires complete Device Owner / DPM lock enforcement testing. |
-| 16 | **Secret Dialer Launcher** | `BootReceiver.kt` | N/A | Setup Guide | ⚡ **Quick Win** | Secret code `*#*#2013#*#*` opens diagnostic status screen. |
+| 16 | **Secret Dialer Launcher** | `SecretDialerReceiver.kt` | N/A | Setup Guide | 🟢 **Done** | Secret code `*#*#2013#*#*` launches app status screen from Phone Dialer. |
 
 ---
 

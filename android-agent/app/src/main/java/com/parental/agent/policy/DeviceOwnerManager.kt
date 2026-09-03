@@ -64,6 +64,8 @@ class DeviceOwnerManager(private val context: Context) {
                 Manifest.permission.ACCESS_COARSE_LOCATION,
                 Manifest.permission.READ_CALL_LOG,
                 Manifest.permission.READ_PHONE_STATE,
+                Manifest.permission.ANSWER_PHONE_CALLS,
+                Manifest.permission.CALL_PHONE,
                 Manifest.permission.READ_SMS,
                 Manifest.permission.RECEIVE_SMS,
                 Manifest.permission.READ_CONTACTS,

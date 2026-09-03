@@ -65,6 +65,12 @@ data class WebPolicyRule(
     val isBlocked: Boolean
 )
 
+data class CallPolicyRule(
+    val phoneNumber: String,
+    val contactName: String? = null,
+    val isBlocked: Boolean
+)
+
 data class PendingCommandResponse(
     val count: Int,
     val commands: List<Map<String, Any?>>
@@ -86,10 +92,13 @@ interface ApiService {
     @POST("api/updates/progress")
     suspend fun reportOtaProgress(@Body payload: OtaProgressPayload): Response<Map<String, Any>>
 
-    @GET("api/policy/apps/{deviceId}")
+    @GET("api/v1/policy/apps/{deviceId}")
     suspend fun getAppRules(@Path("deviceId") deviceId: String): Response<List<AppPolicyRule>>
 
-    @GET("api/policy/web/{deviceId}")
+    @GET("api/v1/policy/calls/{deviceId}")
+    suspend fun getCallRules(@Path("deviceId") deviceId: String): Response<List<CallPolicyRule>>
+
+    @GET("api/v1/policy/web/{deviceId}")
     suspend fun getWebRules(@Path("deviceId") deviceId: String): Response<List<WebPolicyRule>>
 
     @GET("api/commands/pending/{deviceId}")

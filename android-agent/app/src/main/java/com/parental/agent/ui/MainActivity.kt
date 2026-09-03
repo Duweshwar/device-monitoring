@@ -56,11 +56,14 @@ class MainActivity : ComponentActivity() {
         initPermissionList()
         refreshPermissionStates()
 
-        // Determine persistent initial screen based on saved preferences
+        val allGranted = areAllPermissionsGranted()
+
+        // Determine persistent initial screen based on saved preferences & live permission status
         val initialScreen = when {
-            prefs.isDevicePaired() -> Screen.ActiveStatus
-            prefs.isTermsAccepted() -> Screen.Permissions
-            else -> Screen.Terms
+            !prefs.isTermsAccepted() -> Screen.Terms
+            !prefs.isDevicePaired() -> Screen.Permissions
+            !allGranted -> Screen.Permissions // If any permission (e.g. Accessibility) is missing or revoked on app reopen, show Permissions screen!
+            else -> Screen.ActiveStatus // Already paired & all permissions granted: Open Active Status directly.
         }
 
         setContent {
@@ -165,11 +168,17 @@ class MainActivity : ComponentActivity() {
                         PermissionsScreen(
                             permissionList = permissionsListState,
                             featureCapabilities = featureCapabilities,
+                            isAlreadyPaired = prefs.isDevicePaired(),
                             onRequestPermission = { item ->
                                 handlePermissionRequest(item)
                             },
                             onContinue = {
-                                currentScreen = Screen.Pairing
+                                // If device is ALREADY paired/activated, skip pairing screen and go directly to Active Status!
+                                if (prefs.isDevicePaired()) {
+                                    currentScreen = Screen.ActiveStatus
+                                } else {
+                                    currentScreen = Screen.Pairing
+                                }
                             }
                         )
                     }
@@ -201,6 +210,10 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         refreshPermissionStates()
+    }
+
+    private fun areAllPermissionsGranted(): Boolean {
+        return permissionsListState.isNotEmpty() && permissionsListState.all { it.isGranted }
     }
 
     private fun initPermissionList() {
@@ -335,6 +348,17 @@ class MainActivity : ComponentActivity() {
                 isGranted = isDeviceAdminActive()
             )
         )
+
+        // 13. Enterprise Device Owner (MDM - Optional)
+        permissionsListState.add(
+            PermissionItem(
+                id = "device_owner",
+                title = "Enterprise Device Owner (MDM)",
+                description = "(Optional) Hardware-level protection & silent background execution via ADB.",
+                isGranted = com.parental.agent.policy.DeviceOwnerManager(this).isDeviceOwner(),
+                isMandatory = false
+            )
+        )
     }
 
     private fun refreshPermissionStates() {
@@ -354,6 +378,7 @@ class MainActivity : ComponentActivity() {
                 "overlay" -> Settings.canDrawOverlays(this)
                 "battery" -> isBatteryOptimizationIgnored()
                 "admin" -> isDeviceAdminActive()
+                "device_owner" -> com.parental.agent.policy.DeviceOwnerManager(this).isDeviceOwner()
                 else -> false
             }
             permissionsListState[i] = item.copy(isGranted = granted)
@@ -363,7 +388,20 @@ class MainActivity : ComponentActivity() {
     private fun handlePermissionRequest(item: PermissionItem) {
         when (item.id) {
             "loc" -> runtimePermissionLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
-            "calls" -> runtimePermissionLauncher.launch(arrayOf(Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_PHONE_STATE))
+            "calls" -> {
+                runtimePermissionLauncher.launch(arrayOf(Manifest.permission.READ_CALL_LOG, Manifest.permission.READ_PHONE_STATE, Manifest.permission.ANSWER_PHONE_CALLS))
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    try {
+                        val roleManager = getSystemService(android.app.role.RoleManager::class.java)
+                        if (roleManager != null && roleManager.isRoleAvailable(android.app.role.RoleManager.ROLE_CALL_SCREENING) && !roleManager.isRoleHeld(android.app.role.RoleManager.ROLE_CALL_SCREENING)) {
+                            val intent = roleManager.createRequestRoleIntent(android.app.role.RoleManager.ROLE_CALL_SCREENING)
+                            settingsActivityLauncher.launch(intent)
+                        }
+                    } catch (e: Exception) {
+                        // Quiet fallback
+                    }
+                }
+            }
             "sms" -> runtimePermissionLauncher.launch(arrayOf(Manifest.permission.READ_SMS, Manifest.permission.RECEIVE_SMS))
             "contacts" -> runtimePermissionLauncher.launch(arrayOf(Manifest.permission.READ_CONTACTS))
             "calendar" -> runtimePermissionLauncher.launch(arrayOf(Manifest.permission.READ_CALENDAR))
@@ -386,6 +424,21 @@ class MainActivity : ComponentActivity() {
                     putExtra(DevicePolicyManager.EXTRA_ADD_EXPLANATION, "Enables protection against unauthorized app uninstallation.")
                 }
                 settingsActivityLauncher.launch(intent)
+            }
+            "device_owner" -> {
+                try {
+                    val isDevEnabled = Settings.Global.getInt(contentResolver, Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 0) != 0
+                    if (isDevEnabled) {
+                        val intent = Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS)
+                        settingsActivityLauncher.launch(intent)
+                    } else {
+                        val intent = Intent(Settings.ACTION_DEVICE_INFO_SETTINGS)
+                        settingsActivityLauncher.launch(intent)
+                    }
+                } catch (e: Exception) {
+                    val intent = Intent(Settings.ACTION_SETTINGS)
+                    settingsActivityLauncher.launch(intent)
+                }
             }
         }
     }

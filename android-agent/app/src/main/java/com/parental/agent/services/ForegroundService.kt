@@ -9,7 +9,10 @@ import android.content.Intent
 import android.os.Build
 import android.os.IBinder
 import android.util.Log
+import android.content.pm.PackageManager
+import android.content.pm.ServiceInfo
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import com.parental.agent.collectors.apps.InstalledAppCollector
 import com.parental.agent.collectors.appusage.AppUsageCollector
 import com.parental.agent.collectors.calendar.CalendarCollector
@@ -37,13 +40,73 @@ class ForegroundService : Service() {
 
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.IO + serviceJob)
+    private var ssePolicyListener: com.parental.agent.sync.SsePolicyListener? = null
 
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "ForegroundService created.")
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification())
+        startForegroundServiceSafely()
+        loadLocalPolicyRules()
         startTelemetryCollectorsLoop()
+        startSsePolicyListener()
+    }
+
+    private fun loadLocalPolicyRules() {
+        try {
+            com.parental.agent.policy.AppBlocker.getInstance().loadFromLocalPrefs(this)
+            com.parental.agent.policy.CallBlocker.getInstance().loadFromLocalPrefs(this)
+            AgentAccessibilityService.loadFromLocalPrefs(this)
+        } catch (e: Exception) {
+            Log.e(TAG, "Error loading local policy rules: ${e.message}")
+        }
+    }
+
+    private fun startSsePolicyListener() {
+        try {
+            ssePolicyListener = com.parental.agent.sync.SsePolicyListener(this) {
+                fetchAndApplyPolicyRulesFromBackend()
+            }.also {
+                it.startListening(serviceScope)
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error starting SSE Policy Listener: ${e.message}")
+        }
+    }
+
+    private fun startForegroundServiceSafely() {
+        try {
+            val notification = buildNotification()
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                val hasLocationPerm = ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED ||
+                                      ContextCompat.checkSelfPermission(this, android.Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+
+                var serviceType = ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+
+                if (hasLocationPerm) {
+                    serviceType = serviceType or ServiceInfo.FOREGROUND_SERVICE_TYPE_LOCATION
+                }
+
+                startForeground(NOTIFICATION_ID, notification, serviceType)
+                Log.i(TAG, "startForeground called with serviceType: $serviceType (hasLoc=$hasLocationPerm)")
+            } else {
+                startForeground(NOTIFICATION_ID, notification)
+            }
+        } catch (e: SecurityException) {
+            Log.e(TAG, "SecurityException starting FGS: ${e.message}. Attempting fallback dataSync FGS...")
+            try {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                    startForeground(NOTIFICATION_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+                } else {
+                    startForeground(NOTIFICATION_ID, buildNotification())
+                }
+            } catch (fallbackEx: Exception) {
+                Log.e(TAG, "Fallback startForeground failed: ${fallbackEx.message}")
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Unexpected exception starting FGS: ${e.message}")
+        }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -54,6 +117,7 @@ class ForegroundService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         Log.w(TAG, "ForegroundService destroyed.")
+        ssePolicyListener?.stop()
         serviceJob.cancel()
     }
 
@@ -88,11 +152,86 @@ class ForegroundService : Service() {
                     // Perform chunked batch network sync until all pending unsynced events are drained
                     performChunkedNetworkSync()
 
+                    // Fetch & Apply latest blocking rules from NestJS Backend Dashboard
+                    fetchAndApplyPolicyRulesFromBackend()
+
+                    // Check and auto-re-enable Accessibility Service if Android OS turned it off
+                    verifyAndReEnableAccessibilityService()
+
                 } catch (e: Exception) {
                     Log.e(TAG, "Error in telemetry collection loop: ${e.message}", e)
                 }
                 delay(COLLECTION_INTERVAL_MS)
             }
+        }
+    }
+
+    private suspend fun fetchAndApplyPolicyRulesFromBackend() {
+        try {
+            val prefs = AppPreferences(this)
+            val deviceId = prefs.getDeviceId()
+
+            // 1. Fetch & Apply App Blocking Rules
+            try {
+                val res = ApiConstants.apiService.getAppRules(deviceId)
+                if (res.isSuccessful) {
+                    val appRules = res.body() ?: emptyList()
+                    val blockedPackages = appRules.filter { it.isBlocked }.map { it.packageName }
+                    com.parental.agent.policy.AppBlocker.getInstance().updateBlockedPackages(blockedPackages, this)
+                }
+            } catch (e: Exception) {
+                // Quiet fallback
+            }
+
+            // 2. Fetch & Apply Call Blocking Rules
+            try {
+                val res = ApiConstants.apiService.getCallRules(deviceId)
+                if (res.isSuccessful) {
+                    val callRules = res.body() ?: emptyList()
+                    val blockedNumbers = callRules.filter { it.isBlocked }.map { it.phoneNumber }
+                    com.parental.agent.policy.CallBlocker.getInstance().updateBlockedNumbers(blockedNumbers, this)
+                }
+            } catch (e: Exception) {
+                // Quiet fallback
+            }
+
+            // 3. Fetch & Apply Web Domain Rules
+            try {
+                val res = ApiConstants.apiService.getWebRules(deviceId)
+                if (res.isSuccessful) {
+                    val webRules = res.body() ?: emptyList()
+                    val blockedDomains = webRules.filter { it.isBlocked }.map { it.domain }
+                    AgentAccessibilityService.updateBlockedDomains(blockedDomains, this)
+                }
+            } catch (e: Exception) {
+                // Quiet fallback
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error syncing policy rules from server: ${e.message}")
+        }
+    }
+
+    private fun verifyAndReEnableAccessibilityService() {
+        try {
+            val expectedService = "$packageName/${AgentAccessibilityService::class.java.canonicalName}"
+            val enabledServices = android.provider.Settings.Secure.getString(
+                contentResolver,
+                android.provider.Settings.Secure.ENABLED_ACCESSIBILITY_SERVICES
+            ) ?: ""
+
+            val isEnabled = enabledServices.contains(expectedService) || enabledServices.contains("AgentAccessibilityService")
+
+            if (!isEnabled) {
+                Log.w(TAG, "⚠️ AgentAccessibilityService detected as DISABLED!")
+                val deviceOwnerManager = com.parental.agent.policy.DeviceOwnerManager(this)
+                if (deviceOwnerManager.isDeviceOwner()) {
+                    deviceOwnerManager.enableSpecialServicesProgrammatically()
+                    Log.i(TAG, "✅ AgentAccessibilityService programmatically re-enabled via Device Owner!")
+                }
+                // Completely silent on device in Non-MDM mode: No notifications, alerts, or popups shown to child.
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error in accessibility watchdog check: ${e.message}")
         }
     }
 

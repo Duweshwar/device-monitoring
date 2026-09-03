@@ -102,5 +102,62 @@ export const apiService = {
   // 12. Call Audio Recordings
   async getRecordings(deviceId: string, fallback: any[]) {
     return apiFetch<any[]>(`/api/v1/telemetry/recordings/${deviceId}`, fallback);
+  },
+
+  // 13. Policy: App Blocking
+  async toggleAppBlock(payload: { deviceId: string; packageName: string; appName?: string; isBlocked: boolean }) {
+    try {
+      const token = localStorage.getItem('childcare_auth_token') || 'jwt_demo_token';
+      const res = await fetch('/api/v1/policy/apps/block', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (err) {
+      return { success: false, message: 'App policy connection error' };
+    }
+  },
+
+  async getAppRules(deviceId: string) {
+    return apiFetch<any[]>(`/api/v1/policy/apps/${deviceId}`, []);
+  },
+
+  // 14. Policy: Call Blocking
+  async toggleCallBlock(payload: { deviceId: string; phoneNumber: string; contactName?: string; isBlocked: boolean }) {
+    try {
+      const token = localStorage.getItem('childcare_auth_token') || 'jwt_demo_token';
+      const res = await fetch('/api/v1/policy/calls/block', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (err) {
+      return { success: false, message: 'Call policy connection error' };
+    }
+  },
+
+  async getCallRules(deviceId: string) {
+    return apiFetch<any[]>(`/api/v1/policy/calls/${deviceId}`, []);
+  },
+
+  // 15. Policy: Web Domain Filtering
+  async toggleWebBlock(payload: { deviceId: string; domain: string; isBlocked: boolean }) {
+    try {
+      const token = localStorage.getItem('childcare_auth_token') || 'jwt_demo_token';
+      const res = await fetch('/api/v1/policy/web/block', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (err) {
+      return { success: false, message: 'Web policy connection error' };
+    }
+  },
+
+  async getWebRules(deviceId: string) {
+    return apiFetch<any[]>(`/api/v1/policy/web/${deviceId}`, []);
   }
 };

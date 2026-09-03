@@ -1,9 +1,21 @@
-import { Controller, Get, Post, Delete, Body, Query, Param } from '@nestjs/common';
-import { PolicyService, AppBlockDto, WebBlockDto, GeofenceRuleDto } from './policy.service';
+import { Controller, Get, Post, Delete, Body, Param, Sse, MessageEvent } from '@nestjs/common';
+import { Observable, filter, map } from 'rxjs';
+import { PolicyService, AppBlockDto, CallBlockDto, WebBlockDto, GeofenceRuleDto } from './policy.service';
 
 @Controller('policy')
 export class PolicyController {
   constructor(private readonly policyService: PolicyService) {}
+
+  // 0. Real-time SSE Stream Endpoint for Instant 0-Second Policy Sync
+  @Sse('stream/:deviceId')
+  streamPolicyUpdates(@Param('deviceId') deviceId: string): Observable<MessageEvent> {
+    return this.policyService.policyEvents$.pipe(
+      filter(event => event.deviceId === deviceId || event.deviceId === 'all'),
+      map(event => ({
+        data: JSON.stringify({ type: 'POLICY_UPDATE', category: event.type, timestamp: event.timestamp })
+      }))
+    );
+  }
 
   // 1. App Blocking Endpoints
   @Post('apps/block')
@@ -16,7 +28,18 @@ export class PolicyController {
     return this.policyService.getAppRules(deviceId);
   }
 
-  // 2. Web Safety & Domain Filtering Endpoints
+  // 2. Call Blocking Endpoints
+  @Post('calls/block')
+  async toggleCallBlock(@Body() dto: CallBlockDto) {
+    return this.policyService.toggleCallBlock(dto);
+  }
+
+  @Get('calls/:deviceId')
+  async getCallRules(@Param('deviceId') deviceId: string) {
+    return this.policyService.getCallRules(deviceId);
+  }
+
+  // 3. Web Safety & Domain Filtering Endpoints
   @Post('web/block')
   async toggleWebBlock(@Body() dto: WebBlockDto) {
     return this.policyService.toggleWebBlock(dto);
@@ -27,7 +50,7 @@ export class PolicyController {
     return this.policyService.getWebRules(deviceId);
   }
 
-  // 3. Geofence Radius Endpoints
+  // 4. Geofence Radius Endpoints
   @Post('geofence')
   async saveGeofenceRule(@Body() dto: GeofenceRuleDto) {
     return this.policyService.saveGeofenceRule(dto);
