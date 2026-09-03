@@ -128,6 +128,7 @@ model Device {
   webHistory     WebHistory[]
   calendarEvents CalendarEvent[]
   mediaAssets    MediaAsset[]
+  appUsage       AppUsage[]
   appRules       AppRestriction[]
   webRules       WebFilterRule[]
   callRules      CallRestriction[]
@@ -311,6 +312,24 @@ model MediaAsset {
   createdAt   DateTime @default(now())
 
   @@index([deviceId, category])
+}
+
+model AppUsage {
+  id                    String   @id @default(uuid())
+  deviceId              String
+  device                Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  packageName           String
+  appName               String
+  date                  String   // e.g. "2026-09-04" for day-wise aggregation
+  hour                  Int      // 0 to 23 for hour-wise filtering
+  totalTimeForegroundMs BigInt   @default(0)
+  lastTimeUsed          DateTime
+  timestamp             DateTime @default(now())
+  createdAt             DateTime @default(now())
+
+  @@unique([deviceId, packageName, date, hour])
+  @@index([deviceId, date])
+  @@index([deviceId, packageName])
 }
 
 model AppRestriction {

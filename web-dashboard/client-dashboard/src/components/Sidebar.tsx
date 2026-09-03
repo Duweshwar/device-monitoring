@@ -15,6 +15,7 @@ import {
   Radio, 
   ShieldAlert, 
   Lock, 
+  Clock,
   AppWindow,
   Sliders, 
   Smartphone,
@@ -84,6 +85,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       title: 'POLICIES & MDM',
       items: [
+        { id: 'appusage', label: 'App Usage & Time', icon: Clock, badge: 'Live' },
         { id: 'appblock', label: 'Installed Applications', icon: AppWindow },
         { id: 'geofence', label: 'Geofence Radius Rules', icon: ShieldAlert },
         { id: 'settings', label: 'Device Policy Settings', icon: Sliders },

@@ -10,6 +10,7 @@ import { SMSPage } from './pages/SMSPage';
 import { KeyloggerPage } from './pages/KeyloggerPage';
 import { LiveLocationPage } from './pages/LiveLocationPage';
 import { InstalledAppsPage } from './pages/InstalledAppsPage';
+import { AppUsagePage } from './pages/AppUsagePage';
 import { CalendarPage } from './pages/CalendarPage';
 import { WebHistoryPage } from './pages/WebHistoryPage';
 import { PhotosPage } from './pages/PhotosPage';
@@ -315,6 +316,8 @@ export default function App() {
         return <WebHistoryPage device={activeDev} />;
       case 'calendar':
         return <CalendarPage device={activeDev} />;
+      case 'appusage':
+        return <AppUsagePage device={activeDev} />;
       case 'appblock':
       case 'applications':
         return <InstalledAppsPage device={activeDev} />;

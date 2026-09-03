@@ -87,6 +87,26 @@ export class TelemetryController {
     return this.telemetryService.getInstalledApps(deviceId);
   }
 
+  // 6.5 App Usage Telemetry Endpoints
+  @Get('app-usage/:deviceId')
+  async getAppUsage(
+    @Param('deviceId') deviceId: string,
+    @Query('from') from?: string,
+    @Query('to') to?: string,
+  ) {
+    return this.telemetryService.getAppUsage(deviceId, from, to);
+  }
+
+  @Post('app-usage/delete')
+  async deleteAppUsage(@Body() body: { deviceId: string; ids: string[] }) {
+    return this.telemetryService.deleteAppUsage(body.deviceId, body.ids || []);
+  }
+
+  @Post('app-usage/delete-all')
+  async deleteAllAppUsage(@Body() body: { deviceId: string }) {
+    return this.telemetryService.deleteAllAppUsage(body.deviceId);
+  }
+
   // 7. Web History Endpoints
   @Post('web-history')
   async ingestWebHistory(@Query('deviceId') deviceId: string, @Body() body: { history: WebHistoryDto[] }) {
