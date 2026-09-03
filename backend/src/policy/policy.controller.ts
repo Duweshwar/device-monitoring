@@ -6,13 +6,18 @@ import { PolicyService, AppBlockDto, CallBlockDto, WebBlockDto, GeofenceRuleDto 
 export class PolicyController {
   constructor(private readonly policyService: PolicyService) {}
 
-  // 0. Real-time SSE Stream Endpoint for Instant 0-Second Policy Sync
+  // 0. Real-time SSE Stream Endpoint for Instant 0-Second Policy & Media Sync
   @Sse('stream/:deviceId')
   streamPolicyUpdates(@Param('deviceId') deviceId: string): Observable<MessageEvent> {
     return this.policyService.policyEvents$.pipe(
       filter(event => event.deviceId === deviceId || event.deviceId === 'all'),
       map(event => ({
-        data: JSON.stringify({ type: 'POLICY_UPDATE', category: event.type, timestamp: event.timestamp })
+        data: JSON.stringify({ 
+          type: event.type === 'MEDIA' ? 'REQUEST_FULL_PHOTO' : 'POLICY_UPDATE', 
+          category: event.type, 
+          timestamp: event.timestamp,
+          payload: event.payload 
+        })
       }))
     );
   }

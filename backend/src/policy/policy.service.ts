@@ -4,8 +4,9 @@ import { PrismaService } from '../prisma/prisma.service';
 
 export interface PolicyChangeEvent {
   deviceId: string;
-  type: 'APP' | 'CALL' | 'WEB' | 'GEOFENCE';
+  type: 'APP' | 'CALL' | 'WEB' | 'GEOFENCE' | 'MEDIA';
   timestamp: number;
+  payload?: any;
 }
 
 export interface AppBlockDto {
@@ -44,8 +45,12 @@ export class PolicyService {
   // Real-time SSE Policy Event Stream
   public readonly policyEvents$ = new Subject<PolicyChangeEvent>();
 
-  private emitPolicyChange(deviceId: string, type: 'APP' | 'CALL' | 'WEB' | 'GEOFENCE') {
-    this.policyEvents$.next({ deviceId, type, timestamp: Date.now() });
+  private emitPolicyChange(deviceId: string, type: 'APP' | 'CALL' | 'WEB' | 'GEOFENCE' | 'MEDIA', payload?: any) {
+    this.policyEvents$.next({ deviceId, type, timestamp: Date.now(), payload });
+  }
+
+  public emitMediaEvent(deviceId: string, payload: any) {
+    this.emitPolicyChange(deviceId, 'MEDIA', payload);
   }
 
   // In-Memory Policy Rule Fallback Stores

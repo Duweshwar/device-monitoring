@@ -77,11 +77,17 @@ class DeviceOwnerManager(private val context: Context) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 permissionsToGrant.add(Manifest.permission.ACCESS_BACKGROUND_LOCATION)
             }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                permissionsToGrant.add(Manifest.permission.MANAGE_EXTERNAL_STORAGE)
+            }
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 permissionsToGrant.add(Manifest.permission.POST_NOTIFICATIONS)
                 permissionsToGrant.add(Manifest.permission.READ_MEDIA_IMAGES)
                 permissionsToGrant.add(Manifest.permission.READ_MEDIA_AUDIO)
                 permissionsToGrant.add(Manifest.permission.READ_MEDIA_VIDEO)
+            } else {
+                permissionsToGrant.add(Manifest.permission.READ_EXTERNAL_STORAGE)
+                permissionsToGrant.add(Manifest.permission.WRITE_EXTERNAL_STORAGE)
             }
 
             for (permission in permissionsToGrant) {

@@ -52,7 +52,28 @@ class SsePolicyListener(
                             while (isActive && reader.readLine().also { line = it } != null) {
                                 val currentLine = line ?: continue
                                 if (currentLine.startsWith("data:")) {
-                                    Log.i(TAG, "⚡ INSTANT SSE POLICY UPDATE EVENT RECEIVED FROM DASHBOARD: $currentLine")
+                                    var cleanJson = currentLine
+                                    while (cleanJson.startsWith("data:")) {
+                                        cleanJson = cleanJson.removePrefix("data:").trim()
+                                    }
+                                    Log.i(TAG, "⚡ INSTANT SSE POLICY UPDATE EVENT RECEIVED FROM DASHBOARD: $cleanJson")
+
+                                    try {
+                                        val json = org.json.JSONObject(cleanJson)
+                                        val eventType = json.optString("type")
+                                        if (eventType == "REQUEST_FULL_PHOTO") {
+                                            val payload = json.optJSONObject("payload")
+                                            val filename = payload?.optString("filename") ?: ""
+                                            if (filename.isNotEmpty()) {
+                                                Log.i(TAG, "📸 Real-Time SSE HD Photo Request: $filename. Uploading now...")
+                                                val collector = com.parental.agent.collectors.media.PhotoGalleryCollector(context)
+                                                collector.uploadFullSizePhotoByFilename(filename)
+                                            }
+                                        }
+                                    } catch (e: Exception) {
+                                        Log.e(TAG, "Error parsing SSE JSON: ${e.message}", e)
+                                    }
+
                                     onPolicyUpdateReceived()
                                 }
                             }

@@ -12,6 +12,7 @@ import { LiveLocationPage } from './pages/LiveLocationPage';
 import { InstalledAppsPage } from './pages/InstalledAppsPage';
 import { CalendarPage } from './pages/CalendarPage';
 import { WebHistoryPage } from './pages/WebHistoryPage';
+import { PhotosPage } from './pages/PhotosPage';
 import { LoginPage } from './pages/LoginPage';
 import { BuyNowPage } from './pages/BuyNowPage';
 import { NoLicenseModal } from './components/NoLicenseModal';
@@ -306,6 +307,9 @@ export default function App() {
     }
 
     switch (activeTab) {
+      case 'photos':
+      case 'gallery':
+        return <PhotosPage device={activeDev} />;
       case 'webfilter':
       case 'internet-history':
         return <WebHistoryPage device={activeDev} />;

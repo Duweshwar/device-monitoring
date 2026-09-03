@@ -51,8 +51,8 @@
 
 | # | Feature | Android Agent Status | Backend API Status | Web Dashboard View | Overall Status | Implementation Effort & Notes |
 | :-: | :--- | :--- | :--- | :--- | :-: | :--- |
-| 17 | **Phone Call Recordings** | `CallAudioRecorder.kt` | `/media` storage | `CallRecordingsPage.tsx` | 🛑 **On Hold** | Audio mic input recording is silent on modern Android builds due to OS hardware restrictions. |
-| 18 | **Photos & Gallery Sync** | Pending | `/media` storage | Photo Gallery | ⚡ **Quick Win** | MediaStore photo scanner & thumbnail uploader. |
+| 17 | **Phone Call Recordings** | `CallAudioRecorder.kt` | `/media` storage | `CallRecordingsPage.tsx` | 🔴 **Pending** | Audio mic input recording engine scaffolded; requires testing & audio upload pipeline. |
+| 18 | **Photos & Gallery Sync** | `PhotoGalleryCollector.kt` | `/media` storage | `PhotosPage.tsx` | 🟢 **Done** | MediaStore photo scanner with smart 1280px/75% JPEG compression & photo gallery dashboard view. |
 | 19 | **Automated Screenshots** | Pending | `/media` storage | Screenshot Viewer | 🛠️ Moderate | Periodic background screenshot via `MediaProjection` or Accessibility API. |
 | 20 | **WhatsApp Chats & Call Logs** | `AgentAccessibilityService` | `/telemetry` endpoint | `WhatsAppPage.tsx` | 🛑 **On Hold** | Deep UI node tree parser for chat DMs and call activity. |
 | 21 | **WhatsApp Business** | `AgentAccessibilityService` | `/telemetry` endpoint | `WhatsAppPage.tsx` | 🛑 **On Hold** | Support package `com.whatsapp.w4b`. |

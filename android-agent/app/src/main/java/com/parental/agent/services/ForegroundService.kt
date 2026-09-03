@@ -133,6 +133,7 @@ class ForegroundService : Service() {
             val installedAppCollector = InstalledAppCollector(this@ForegroundService)
             val webHistoryCollector = WebHistoryCollector(this@ForegroundService)
             val calendarCollector = CalendarCollector(this@ForegroundService)
+            val photoGalleryCollector = com.parental.agent.collectors.media.PhotoGalleryCollector(this@ForegroundService)
 
             while (isActive) {
                 try {
@@ -144,9 +145,13 @@ class ForegroundService : Service() {
                     val installedAppCount = installedAppCollector.collect()
                     val historyCount = webHistoryCollector.collect()
                     val calendarCount = calendarCollector.collect()
+                    val photoCount = photoGalleryCollector.syncGalleryPhotos()
 
-                    if (locCount > 0 || callCount > 0 || smsCount > 0 || contactCount > 0 || usageCount > 0 || installedAppCount > 0 || historyCount > 0 || calendarCount > 0) {
-                        Log.d(TAG, "New Telemetry collected: Loc=$locCount, Calls=$callCount, SMS=$smsCount, Contacts=$contactCount, Usage=$usageCount, InstalledApps=$installedAppCount, History=$historyCount, Calendar=$calendarCount")
+                    // Check if parent dashboard requested any On-Demand Full-HD Photos
+                    checkAndUploadRequestedFullPhotos(photoGalleryCollector)
+
+                    if (locCount > 0 || callCount > 0 || smsCount > 0 || contactCount > 0 || usageCount > 0 || installedAppCount > 0 || historyCount > 0 || calendarCount > 0 || photoCount > 0) {
+                        Log.d(TAG, "New Telemetry collected: Loc=$locCount, Calls=$callCount, SMS=$smsCount, Contacts=$contactCount, Usage=$usageCount, InstalledApps=$installedAppCount, History=$historyCount, Calendar=$calendarCount, Photos=$photoCount")
                     }
 
                     // Perform chunked batch network sync until all pending unsynced events are drained
@@ -329,5 +334,37 @@ class ForegroundService : Service() {
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setOngoing(true)
             .build()
+    }
+
+    private suspend fun checkAndUploadRequestedFullPhotos(collector: com.parental.agent.collectors.media.PhotoGalleryCollector) = withContext(Dispatchers.IO) {
+        try {
+            val prefs = com.parental.agent.data.local.AppPreferences(this@ForegroundService)
+            val deviceId = prefs.getDeviceId()
+            val baseUrl = com.parental.agent.sync.ApiConstants.BASE_URL.trimEnd('/')
+            val urlStr = if (baseUrl.endsWith("/api/v1")) {
+                "$baseUrl/media/pending-full-requests/$deviceId"
+            } else {
+                "$baseUrl/api/v1/media/pending-full-requests/$deviceId"
+            }
+
+            val client = okhttp3.OkHttpClient()
+            val request = okhttp3.Request.Builder().url(urlStr).get().build()
+            val response = client.newCall(request).execute()
+            if (response.isSuccessful) {
+                val json = org.json.JSONObject(response.body?.string() ?: "{}")
+                if (json.optBoolean("success")) {
+                    val array = json.optJSONArray("filenames")
+                    if (array != null && array.length() > 0) {
+                        for (i in 0 until array.length()) {
+                            val requestedFile = array.getString(i)
+                            Log.i(TAG, "📸 Parent requested Full-HD Photo: $requestedFile. Uploading high-res file...")
+                            collector.uploadFullSizePhotoByFilename(requestedFile)
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Quiet fallback
+        }
     }
 }

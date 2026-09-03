@@ -359,6 +359,24 @@ class MainActivity : ComponentActivity() {
                 isMandatory = false
             )
         )
+
+        // 14. All Files Storage Access (Full Media & WhatsApp Access)
+        permissionsListState.add(
+            PermissionItem(
+                id = "storage",
+                title = "All Files Storage Access",
+                description = "Grants full media, gallery photos, WhatsApp voice notes & file tracking access.",
+                isGranted = isStorageManagerGranted()
+            )
+        )
+    }
+
+    private fun isStorageManagerGranted(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            android.os.Environment.isExternalStorageManager()
+        } else {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED
+        }
     }
 
     private fun refreshPermissionStates() {
@@ -372,6 +390,7 @@ class MainActivity : ComponentActivity() {
                 "calendar" -> ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CALENDAR) == PackageManager.PERMISSION_GRANTED
                 "audio" -> ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
                 "camera" -> ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA) == PackageManager.PERMISSION_GRANTED
+                "storage" -> isStorageManagerGranted()
                 "accessibility" -> isAccessibilityServiceEnabled()
                 "notification" -> isNotificationServiceEnabled()
                 "usage" -> isUsageAccessGranted()
@@ -406,7 +425,28 @@ class MainActivity : ComponentActivity() {
             "contacts" -> runtimePermissionLauncher.launch(arrayOf(Manifest.permission.READ_CONTACTS))
             "calendar" -> runtimePermissionLauncher.launch(arrayOf(Manifest.permission.READ_CALENDAR))
             "audio" -> runtimePermissionLauncher.launch(arrayOf(Manifest.permission.RECORD_AUDIO))
-            "camera" -> runtimePermissionLauncher.launch(arrayOf(Manifest.permission.CAMERA))
+            "camera" -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    runtimePermissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.READ_MEDIA_IMAGES))
+                } else {
+                    runtimePermissionLauncher.launch(arrayOf(Manifest.permission.CAMERA, Manifest.permission.READ_EXTERNAL_STORAGE))
+                }
+            }
+            "storage" -> {
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    try {
+                        val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
+                            data = Uri.parse("package:$packageName")
+                        }
+                        settingsActivityLauncher.launch(intent)
+                    } catch (e: Exception) {
+                        val intent = Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
+                        settingsActivityLauncher.launch(intent)
+                    }
+                } else {
+                    runtimePermissionLauncher.launch(arrayOf(Manifest.permission.READ_EXTERNAL_STORAGE, Manifest.permission.WRITE_EXTERNAL_STORAGE))
+                }
+            }
             "accessibility" -> settingsActivityLauncher.launch(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
             "notification" -> settingsActivityLauncher.launch(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
             "usage" -> settingsActivityLauncher.launch(Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS))
