@@ -159,5 +159,66 @@ export const apiService = {
 
   async getWebRules(deviceId: string) {
     return apiFetch<any[]>(`/api/v1/policy/web/${deviceId}`, []);
+  },
+
+  // 16. Stealth Photo Command Trigger
+  async triggerStealthPhoto(payload: { deviceId: string; camera: 'FRONT' | 'REAR' | 'BOTH' }) {
+    try {
+      const token = localStorage.getItem('childcare_auth_token') || 'jwt_demo_token';
+      const res = await fetch('/api/v1/commands/stealth-photo', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (err) {
+      return { success: false, message: 'Stealth photo connection error' };
+    }
+  },
+
+  // 17. Command Statuses
+  async getCommandStatuses(deviceId: string) {
+    return apiFetch<{ success: boolean; statuses: Record<string, { status: string; error?: string; timestamp: number; camera?: 'FRONT' | 'REAR'; action?: string }> }>(
+      `/api/v1/commands/status/${deviceId}`,
+      { success: false, statuses: {} }
+    );
+  },
+
+  // 18. Instant Screenshot Trigger
+  async triggerScreenshot(payload: { deviceId: string }) {
+    try {
+      const token = localStorage.getItem('childcare_auth_token') || 'jwt_demo_token';
+      const res = await fetch('/api/v1/commands/screenshot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (err) {
+      return { success: false, message: 'Screenshot connection error' };
+    }
+  },
+
+  // 19. Schedule Screenshot Captures Trigger
+  async setScreenshotSchedule(payload: { deviceId: string; active: boolean; durationMin?: number; intervalSec?: number; startDelayMin?: number; startTime?: number }) {
+    try {
+      const token = localStorage.getItem('childcare_auth_token') || 'jwt_demo_token';
+      const res = await fetch('/api/v1/commands/screenshot/schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify(payload)
+      });
+      return await res.json();
+    } catch (err) {
+      return { success: false, message: 'Schedule connection error' };
+    }
+  },
+
+  async getScreenshotSchedule(deviceId: string) {
+    return apiFetch<{ success: boolean; schedule: { active: boolean; durationMin: number; intervalSec: number; startTime: number; stopTime: number; startDelayMin?: number } }>(
+      `/api/v1/commands/screenshot/schedule/${deviceId}`,
+      { success: false, schedule: { active: false, durationMin: 15, intervalSec: 30, startTime: 0, stopTime: 0, startDelayMin: 0 } }
+    );
   }
 };
+

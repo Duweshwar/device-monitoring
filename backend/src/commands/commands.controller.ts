@@ -31,8 +31,28 @@ export class CommandsController {
     return this.commandsService.triggerLocationSync(dto);
   }
 
+  @Post('screenshot/schedule')
+  async setScreenshotSchedule(@Body() body: { deviceId: string; active: boolean; durationMin?: number; intervalSec?: number; startDelayMin?: number; startTime?: number }) {
+    return this.commandsService.setScreenshotSchedule(body);
+  }
+
+  @Get('screenshot/schedule/:deviceId')
+  async getScreenshotSchedule(@Param('deviceId') deviceId: string) {
+    return this.commandsService.getScreenshotSchedule(deviceId);
+  }
+
   @Get('pending/:deviceId')
   async getPendingCommands(@Param('deviceId') deviceId: string) {
     return this.commandsService.getPendingCommands(deviceId);
+  }
+
+  @Post('status')
+  async updateCommandStatus(@Body() body: { deviceId: string; commandId: string; status: 'PENDING' | 'SUCCESS' | 'FAILED'; error?: string }) {
+    return this.commandsService.updateCommandStatus(body);
+  }
+
+  @Get('status/:deviceId')
+  async getCommandStatuses(@Param('deviceId') deviceId: string) {
+    return this.commandsService.getCommandStatuses(deviceId);
   }
 }

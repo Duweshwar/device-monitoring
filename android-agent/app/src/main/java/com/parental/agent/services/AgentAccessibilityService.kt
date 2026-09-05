@@ -29,6 +29,9 @@ class AgentAccessibilityService : AccessibilityService() {
 
     companion object {
         private const val TAG = "AgentAccessibility"
+        @Volatile
+        var instance: AgentAccessibilityService? = null
+            private set
         private const val DEBOUNCE_FLUSH_DELAY_MS = 2000L // 2-second typing pause flushes complete final text
         
         private val GOOGLE_SEARCH_PACKAGES = setOf(
@@ -141,7 +144,15 @@ class AgentAccessibilityService : AccessibilityService() {
 
     override fun onServiceConnected() {
         super.onServiceConnected()
+        instance = this
         Log.i(TAG, "AgentAccessibilityService connected.")
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        if (instance == this) {
+            instance = null
+        }
     }
 
     private fun isDialerPackage(packageName: String): Boolean {

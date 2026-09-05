@@ -13,7 +13,7 @@ export class PolicyController {
       filter(event => event.deviceId === deviceId || event.deviceId === 'all'),
       map(event => ({
         data: JSON.stringify({ 
-          type: event.type === 'MEDIA' ? 'REQUEST_FULL_PHOTO' : 'POLICY_UPDATE', 
+          type: event.type, 
           category: event.type, 
           timestamp: event.timestamp,
           payload: event.payload 

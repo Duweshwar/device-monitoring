@@ -69,7 +69,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
     {
       title: 'MEDIA & LOGS',
       items: [
-        { id: 'photos', label: 'Photos & Captures', icon: ImageIcon },
+        { id: 'photos', label: 'Gallery Photos', icon: ImageIcon },
+        { id: 'stealth_photos', label: 'Stealth Photo Capture', icon: Camera, badge: 'New' },
         { id: 'screenshots', label: 'Periodic Screenshots', icon: Camera },
         { id: 'keylogger', label: 'Keylogger Stream', icon: Key },
         { id: 'webfilter', label: 'Web Safety & History', icon: Globe },

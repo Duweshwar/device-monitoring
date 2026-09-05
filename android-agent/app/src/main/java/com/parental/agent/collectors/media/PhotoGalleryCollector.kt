@@ -274,7 +274,7 @@ class PhotoGalleryCollector(private val context: Context) {
         }
     }
 
-    private fun uploadPhotoToServer(file: File, deviceId: String, fileName: String, category: String = "PHOTO_GALLERY", originalSizeBytes: Long = 0L): Boolean {
+    fun uploadPhotoToServer(file: File, deviceId: String, fileName: String, category: String = "PHOTO_GALLERY", originalSizeBytes: Long = 0L): Boolean {
         return try {
             val client = OkHttpClient()
             val baseUrl = ApiConstants.BASE_URL.trimEnd('/')

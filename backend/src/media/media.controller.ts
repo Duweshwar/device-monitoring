@@ -129,7 +129,7 @@ export class MediaController {
             fileSizeBytes: a.fileSizeBytes,
             originalSizeBytes: origSize,
             mimeType: a.mimeType,
-            url: `/media/stream/${a.storageKey}`,
+            url: `/api/v1/media/stream/${a.storageKey}`,
             timestamp: a.timestamp,
           };
         }),
