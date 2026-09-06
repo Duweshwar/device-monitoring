@@ -126,13 +126,12 @@ class AgentAccessibilityService : AccessibilityService() {
             }
 
             // 2.2 WhatsApp Outgoing Send Button Click Interceptor
-            if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED &&
-                (packageName == "com.whatsapp" || packageName == "com.whatsapp.w4b")) {
+            if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED && isWhatsAppPackage(packageName)) {
                 checkAndEmitWhatsAppOutgoingOnSendClick(event, packageName)
             }
 
             // 2.5 Active WhatsApp Screen Node Analyzer (Fallback when notifications are disabled)
-            if (packageName == "com.whatsapp" || packageName == "com.whatsapp.w4b") {
+            if (isWhatsAppPackage(packageName)) {
                 if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED || 
                     event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
                     captureWhatsAppScreenNodes(rootInActiveWindow ?: event.source, packageName)
@@ -629,7 +628,7 @@ class AgentAccessibilityService : AccessibilityService() {
             lastOutgoingSentText = textToSend
             lastOutgoingSentTimestamp = now
 
-            val waAppName = if (packageName == "com.whatsapp.w4b") "WhatsApp Business" else "WhatsApp"
+            val waAppName = getWhatsAppAppName(packageName)
             val waEventId = "evt_wa_out_${now}"
 
             Log.i(TAG, "⚡ WHATSAPP OUTGOING MESSAGE SENT (ON SEND CLICK): Text=\"$textToSend\"")
@@ -709,22 +708,29 @@ class AgentAccessibilityService : AccessibilityService() {
     private fun findStatusNodeDetails(parent: AccessibilityNodeInfo?): String? {
         if (parent == null) return null
         return try {
-            val possibleStatusIds = listOf(
-                "com.whatsapp:id/status",
-                "com.whatsapp:id/msg_status",
-                "com.whatsapp:id/status_icon",
-                "com.whatsapp.w4b:id/status",
-                "com.whatsapp.w4b:id/msg_status",
-                "com.whatsapp.w4b:id/status_icon"
-            )
-            for (statusId in possibleStatusIds) {
-                val nodes = parent.findAccessibilityNodeInfosByViewId(statusId)
-                if (!nodes.isNullOrEmpty()) {
-                    for (n in nodes) {
-                        val desc = n.contentDescription?.toString()?.trim() ?: ""
-                        val text = n.text?.toString()?.trim() ?: ""
-                        val cls = n.className?.toString()?.substringAfterLast(".") ?: "View"
-                        return "ID=\"$statusId\", Desc=\"$desc\", Text=\"$text\", Class=$cls"
+            val possibleStatusSuffixes = listOf("id/status", "id/msg_status", "id/status_icon")
+            
+            // Search all child nodes (depth <= 3) for status tick icons across any WhatsApp package/clone
+            val queue = java.util.ArrayDeque<Pair<AccessibilityNodeInfo, Int>>()
+            queue.add(Pair(parent, 0))
+
+            while (queue.isNotEmpty()) {
+                val (current, depth) = queue.removeFirst()
+                val viewId = current.viewIdResourceName ?: ""
+
+                if (viewId.isNotBlank() && possibleStatusSuffixes.any { viewId.endsWith(it) }) {
+                    val desc = current.contentDescription?.toString()?.trim() ?: ""
+                    val text = current.text?.toString()?.trim() ?: ""
+                    val cls = current.className?.toString()?.substringAfterLast(".") ?: "View"
+                    return "ID=\"$viewId\", Desc=\"$desc\", Text=\"$text\", Class=$cls"
+                }
+
+                if (depth < 3) {
+                    for (i in 0 until current.childCount) {
+                        val child = current.getChild(i)
+                        if (child != null) {
+                            queue.add(Pair(child, depth + 1))
+                        }
                     }
                 }
             }
@@ -794,6 +800,23 @@ class AgentAccessibilityService : AccessibilityService() {
         }
     }
 
+    private fun isWhatsAppPackage(pkg: String?): Boolean {
+        if (pkg.isNullOrBlank()) return false
+        val lower = pkg.lowercase()
+        return lower.contains("whatsapp")
+    }
+
+    private fun getWhatsAppAppName(pkg: String): String {
+        return when {
+            pkg.contains("w4b", ignoreCase = true) -> "WhatsApp Business"
+            pkg.contains("gb", ignoreCase = true) -> "GBWhatsApp"
+            pkg.contains("fm", ignoreCase = true) -> "FMWhatsApp"
+            pkg.contains("yo", ignoreCase = true) -> "YoWhatsApp"
+            pkg.contains("clone", ignoreCase = true) || pkg.contains("dual", ignoreCase = true) -> "WhatsApp Dual"
+            else -> "WhatsApp"
+        }
+    }
+
     private fun captureWhatsAppScreenNodes(rootNode: AccessibilityNodeInfo?, packageName: String) {
         if (rootNode == null) return
         try {
@@ -814,7 +837,7 @@ class AgentAccessibilityService : AccessibilityService() {
 
             val isOutgoingMsg = isNodeOutgoingMessage(lastMsgNode, msgText)
             val now = System.currentTimeMillis()
-            val waAppName = if (packageName == "com.whatsapp.w4b") "WhatsApp Business" else "WhatsApp"
+            val waAppName = getWhatsAppAppName(packageName)
             val eventId = if (isOutgoingMsg) "evt_wa_out_${now}" else "evt_wa_scr_${now}"
 
             val detectedTitle = extractWhatsAppChatTitle(rootNode, packageName)

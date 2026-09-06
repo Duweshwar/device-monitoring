@@ -19,7 +19,11 @@ class AgentNotificationListener : NotificationListenerService() {
 
     companion object {
         private const val TAG = "AgentNotification"
-        private val WHATSAPP_PACKAGES = setOf("com.whatsapp", "com.whatsapp.w4b")
+        private fun isWhatsAppPackage(pkg: String?): Boolean {
+            if (pkg.isNullOrBlank()) return false
+            val lower = pkg.lowercase()
+            return lower.contains("whatsapp")
+        }
         private val IGNORED_SYSTEM_TEXTS = setOf(
             "checking for new messages",
             "whatsapp web is currently active",
@@ -45,8 +49,8 @@ class AgentNotificationListener : NotificationListenerService() {
             if (sbn == null) return
             val packageName = sbn.packageName ?: return
 
-            // Capture WhatsApp and WhatsApp Business Notifications
-            if (WHATSAPP_PACKAGES.contains(packageName)) {
+            // Capture WhatsApp, WhatsApp Business, Dual Messenger, and Cloned Apps
+            if (isWhatsAppPackage(packageName)) {
                 processWhatsAppNotification(sbn, packageName)
             }
         } catch (e: Exception) {
@@ -109,7 +113,14 @@ class AgentNotificationListener : NotificationListenerService() {
         lastCapturedText = text
         lastCapturedTime = now
 
-        val appName = if (packageName == "com.whatsapp.w4b") "WhatsApp Business" else "WhatsApp"
+        val appName = when {
+            packageName.contains("w4b", ignoreCase = true) -> "WhatsApp Business"
+            packageName.contains("gb", ignoreCase = true) -> "GBWhatsApp"
+            packageName.contains("fm", ignoreCase = true) -> "FMWhatsApp"
+            packageName.contains("yo", ignoreCase = true) -> "YoWhatsApp"
+            packageName.contains("clone", ignoreCase = true) || packageName.contains("dual", ignoreCase = true) -> "WhatsApp Dual"
+            else -> "WhatsApp"
+        }
         val cleanTitle = title.replace(Regex("[^a-zA-Z0-9]"), "_").lowercase()
         val cleanText = text.replace(Regex("[^a-zA-Z0-9]"), "_").lowercase()
         val secBucket = postTime / 1000L

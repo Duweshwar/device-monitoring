@@ -1,6 +1,6 @@
 # Parental & Enterprise Phone Monitoring — Master Feature Roadmap & Implementation Tracker
 
-> **Last Updated**: 2026-09-03  
+> **Last Updated**: 2026-09-06  
 > **Repository**: `ParantelPhoneMonitoring`  
 > **Status Legend**:
 > - 🟢 **Done**: Fully coded in Android Agent, Backend API, and Web Dashboard.
@@ -15,11 +15,11 @@
 
 | Status Category | Total Count |
 | :--- | :-: |
-| 🟢 **Completed / Coded** | 10 |
+| 🟢 **Completed / Coded** | 15 |
 | ⚡ **Quick Wins (Easy & High Priority)** | 12 |
 | 🛠️ **Moderate Complexity** | 16 |
-| 🔴 **Not Done / In Progress** | 4 |
-| 🛑 **On Hold (Hardware / OS Limits)** | 10 |
+| 🔴 **Not Done / Pending** | 2 |
+| 🛑 **On Hold (Hardware / OS Limits)** | 7 |
 | **TOTAL ROADMAP FEATURES** | **52** |
 
 ---
@@ -53,9 +53,9 @@
 | :-: | :--- | :--- | :--- | :--- | :-: | :--- |
 | 17 | **Phone Call Recordings** | `CallAudioRecorder.kt` | `/media` storage | `CallRecordingsPage.tsx` | 🔴 **Pending** | Audio mic input recording engine scaffolded; requires testing & audio upload pipeline. |
 | 18 | **Photos & Gallery Sync** | `PhotoGalleryCollector.kt` | `/media` storage | `PhotosPage.tsx` | 🟢 **Done** | MediaStore photo scanner with smart 1280px/75% JPEG compression & photo gallery dashboard view. |
-| 19 | **Automated Screenshots** | Pending | `/media` storage | Screenshot Viewer | 🛠️ Moderate | Periodic background screenshot via `MediaProjection` or Accessibility API. |
-| 20 | **WhatsApp Chats & Call Logs** | `AgentAccessibilityService` | `/telemetry` endpoint | `WhatsAppPage.tsx` | 🛑 **On Hold** | Deep UI node tree parser for chat DMs and call activity. |
-| 21 | **WhatsApp Business** | `AgentAccessibilityService` | `/telemetry` endpoint | `WhatsAppPage.tsx` | 🛑 **On Hold** | Support package `com.whatsapp.w4b`. |
+| 19 | **Automated Screenshots** | `ScreenshotCollector.kt` | `/media` storage | Screenshot Viewer | 🟢 **Done** | Android 11+ Accessibility `takeScreenshot()` API with SSE instant trigger & interval scheduler. |
+| 20 | **WhatsApp Chats (DMs)** | `AgentAccessibilityService` | `/telemetry` endpoint | `WhatsAppPage.tsx` | 🟢 **Done** | Accurate inbound/outbound single-row tick status parser, single-char text support, dedicated `WhatsAppMessage` DB table & migration (WhatsApp VoIP audio/calls on hold). |
+| 21 | **WhatsApp Business** | `AgentAccessibilityService` | `/telemetry` endpoint | `WhatsAppPage.tsx` | 🟢 **Done** | Fully supported package `com.whatsapp.w4b` with distinct app labeling. |
 | 22 | **WhatsApp Audio & Videos** | Pending | `/media` storage | `WhatsAppPage.tsx` | ⚡ **Quick Win** | MediaStore folder scanner for WhatsApp Audio/Video. |
 | 23 | **WhatsApp Voice Notes** | Pending | `/media` storage | `WhatsAppPage.tsx` | ⚡ **Quick Win** | WhatsApp Voice Notes folder scanner (`.opus` / `.m4a`). |
 | 24 | **WhatsApp Images** | Pending | `/media` storage | `WhatsAppPage.tsx` | ⚡ **Quick Win** | WhatsApp Images folder scanner. |
