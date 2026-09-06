@@ -134,6 +134,31 @@ export class TelemetryService {
           }).catch(() => null);
         }
 
+        // 2.5 Populate Dedicated WhatsAppMessage Table
+        if (evt.source === 'whatsapp' && evt.payload) {
+          const p = evt.payload;
+          const isOut = Boolean(p.isOutgoing);
+          const sender = p.sender || p.chatTitle || (isOut ? 'Me' : 'WhatsApp Contact');
+          const msgText = p.message || p.text || '';
+          const chatTitle = p.chatTitle || sender;
+          const appName = p.appName || (p.packageName === 'com.whatsapp.w4b' ? 'WhatsApp Business' : 'WhatsApp');
+
+          if (msgText.trim()) {
+            await this.prisma.whatsAppMessage.create({
+              data: {
+                deviceId,
+                chatTitle,
+                sender,
+                message: msgText,
+                isOutgoing: isOut,
+                appName,
+                collectionMethod: safeMethod,
+                timestamp: new Date(evt.timestamp || Date.now())
+              }
+            }).catch(() => null);
+          }
+        }
+
         // 3. Populate LocationLog Table
         if (evt.source === 'location' && evt.payload && evt.payload.latitude && evt.payload.longitude) {
           await this.prisma.locationLog.create({
@@ -878,8 +903,49 @@ export class TelemetryService {
     return [];
   }
 
-  // 10. WhatsApp & WA Business Telemetry Stream
+  // 10. WhatsApp & WA Business Telemetry Stream (Queries Dedicated WhatsAppMessage Table with Fallback)
   async getWhatsApp(deviceId: string) {
+    try {
+      const dedicated = await this.prisma.whatsAppMessage.findMany({
+        where: { deviceId },
+        orderBy: { timestamp: 'desc' },
+        take: 300
+      });
+
+      if (dedicated && dedicated.length > 0) {
+        const rawList = dedicated.map((w) => ({
+          id: w.id,
+          sender: w.sender,
+          message: w.message,
+          packageName: w.appName.includes('Business') ? 'com.whatsapp.w4b' : 'com.whatsapp',
+          appName: w.appName,
+          isOutgoing: w.isOutgoing,
+          timestamp: new Date(w.timestamp).toLocaleString(),
+          rawTimestamp: new Date(w.timestamp).getTime(),
+          chatTitle: w.chatTitle
+        }));
+
+        // Deduplicate adjacent duplicate notifications (same chatTitle + sender + text within 5 seconds)
+        const deduplicated: typeof rawList = [];
+        for (const item of rawList) {
+          const isDuplicate = deduplicated.some(
+            (existing) =>
+              existing.chatTitle === item.chatTitle &&
+              existing.sender === item.sender &&
+              existing.message === item.message &&
+              Math.abs(existing.rawTimestamp - item.rawTimestamp) < 5000
+          );
+          if (!isDuplicate) {
+            deduplicated.push(item);
+          }
+        }
+        return deduplicated;
+      }
+    } catch (e) {
+      console.warn('[getWhatsApp dedicated query error]:', e);
+    }
+
+    // Fallback to NormalizedEvent if dedicated table is empty
     try {
       const events = await this.prisma.normalizedEvent.findMany({
         where: {
@@ -895,7 +961,6 @@ export class TelemetryService {
         const text = (p.message || p.text || '').toString().toLowerCase().trim();
         if (!text) return false;
 
-        // Filter system status summary notifications (e.g. "2 new messages", "3 new messages")
         if (
           text.includes('new messages') ||
           text.includes('unread messages') ||
@@ -933,7 +998,6 @@ export class TelemetryService {
           };
         });
 
-        // Deduplicate adjacent duplicate notifications (same sender + text within 5 seconds)
         const deduplicated: typeof rawList = [];
         for (const item of rawList) {
           const isDuplicate = deduplicated.some(
@@ -950,7 +1014,7 @@ export class TelemetryService {
         return deduplicated;
       }
     } catch (e) {
-      console.warn('[getWhatsApp query notice]:', e);
+      console.warn('[getWhatsApp fallback error]:', e);
     }
 
     // Fallback demo WhatsApp messages if no live telemetry events captured yet

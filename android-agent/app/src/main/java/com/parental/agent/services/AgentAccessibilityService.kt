@@ -599,15 +599,27 @@ class AgentAccessibilityService : AccessibilityService() {
     @Volatile
     private var lastOutgoingSentTimestamp: Long = 0L
 
+    private fun isSendButtonNode(node: AccessibilityNodeInfo?): Boolean {
+        var curr = node
+        var depth = 0
+        while (curr != null && depth < 4) {
+            val vId = curr.viewIdResourceName?.lowercase() ?: ""
+            val cd = curr.contentDescription?.toString()?.lowercase() ?: ""
+            if (vId.contains("send") || cd.contains("send")) {
+                return true
+            }
+            curr = curr.parent
+            depth++
+        }
+        return false
+    }
+
     private fun checkAndEmitWhatsAppOutgoingOnSendClick(event: AccessibilityEvent, packageName: String) {
         try {
             val sourceNode = event.source ?: return
-            val viewId = sourceNode.viewIdResourceName?.lowercase() ?: ""
-            val contentDesc = sourceNode.contentDescription?.toString()?.lowercase() ?: ""
 
             // Verify the clicked button is the WhatsApp Send button (com.whatsapp:id/send or Send button)
-            val isSendButton = viewId.contains("send") || contentDesc.contains("send")
-            if (!isSendButton) return
+            if (!isSendButtonNode(sourceNode)) return
 
             // Extract the last typed draft text for WhatsApp
             val textToSend = currentDraftText.trim().ifBlank { lastFlushedText.trim() }
@@ -797,7 +809,7 @@ class AgentAccessibilityService : AccessibilityService() {
             val lastMsgNode = nodes.lastOrNull() ?: return
             val msgText = lastMsgNode.text?.toString()?.trim() ?: return
 
-            if (msgText.isBlank() || msgText.length < 2 || msgText == lastCapturedScreenText) return
+            if (msgText.isBlank() || msgText == lastCapturedScreenText) return
             lastCapturedScreenText = msgText
 
             val isOutgoingMsg = isNodeOutgoingMessage(lastMsgNode, msgText)

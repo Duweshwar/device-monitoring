@@ -129,6 +129,7 @@ model Device {
   calendarEvents CalendarEvent[]
   mediaAssets    MediaAsset[]
   appUsage       AppUsage[]
+  whatsappMessages WhatsAppMessage[]
   appRules       AppRestriction[]
   webRules       WebFilterRule[]
   callRules      CallRestriction[]
@@ -420,4 +421,21 @@ model AuditLog {
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+}
+
+model WhatsAppMessage {
+  id               String   @id @default(uuid())
+  deviceId         String
+  device           Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  chatTitle        String
+  sender           String
+  message          String
+  isOutgoing       Boolean  @default(false)
+  appName          String   @default("WhatsApp")
+  collectionMethod String   @default("accessibility")
+  timestamp        DateTime
+  createdAt        DateTime @default(now())
+
+  @@index([deviceId, chatTitle, timestamp])
+  @@index([deviceId, timestamp])
 }
