@@ -25,12 +25,35 @@ class SsePolicyListener(
 
     private var listenerJob: Job? = null
 
+    private fun isNetworkAvailable(): Boolean {
+        return try {
+            val cm = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager ?: return true
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                val network = cm.activeNetwork ?: return false
+                val capabilities = cm.getNetworkCapabilities(network) ?: return false
+                capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            } else {
+                @Suppress("DEPRECATION")
+                val activeNetwork = cm.activeNetworkInfo
+                @Suppress("DEPRECATION")
+                activeNetwork != null && activeNetwork.isConnected
+            }
+        } catch (e: Exception) {
+            true
+        }
+    }
+
     fun startListening(scope: CoroutineScope) {
         listenerJob?.cancel()
         listenerJob = scope.launch(Dispatchers.IO) {
             val prefs = AppPreferences(context)
 
             while (isActive) {
+                if (!isNetworkAvailable()) {
+                    delay(15000) // Quiet 15s delay when network is offline
+                    continue
+                }
+
                 val deviceId = prefs.getDeviceId()
                 val sseUrl = "${ApiConstants.BASE_URL}api/v1/policy/stream/$deviceId"
 

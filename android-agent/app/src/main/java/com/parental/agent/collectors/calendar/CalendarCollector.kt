@@ -36,6 +36,7 @@ class CalendarCollector(context: Context) : BaseCollector(context) {
             )
 
             cursor?.use {
+                val idIdx = it.getColumnIndex(CalendarContract.Events._ID)
                 val titleIdx = it.getColumnIndex(CalendarContract.Events.TITLE)
                 val locationIdx = it.getColumnIndex(CalendarContract.Events.EVENT_LOCATION)
                 val dtStartIdx = it.getColumnIndex(CalendarContract.Events.DTSTART)
@@ -43,6 +44,7 @@ class CalendarCollector(context: Context) : BaseCollector(context) {
                 val descIdx = it.getColumnIndex(CalendarContract.Events.DESCRIPTION)
 
                 while (it.moveToNext()) {
+                    val rawId = if (idIdx != -1 && !it.isNull(idIdx)) it.getLong(idIdx) else 0L
                     val title = if (titleIdx != -1) it.getString(titleIdx) ?: "" else ""
                     val location = if (locationIdx != -1) it.getString(locationIdx) ?: "" else ""
                     val dtStart = if (dtStartIdx != -1 && !it.isNull(dtStartIdx)) it.getLong(dtStartIdx) else System.currentTimeMillis()
@@ -50,6 +52,8 @@ class CalendarCollector(context: Context) : BaseCollector(context) {
                     val description = if (descIdx != -1) it.getString(descIdx) ?: "" else ""
 
                     if (title.isNotBlank()) {
+                        val deterministicEventId = if (rawId > 0) "evt_cal_${rawId}" else "evt_cal_${title.hashCode()}_${dtStart}"
+
                         val payload = JSONObject().apply {
                             put("title", title)
                             put("location", location)
@@ -64,7 +68,8 @@ class CalendarCollector(context: Context) : BaseCollector(context) {
                             source = "calendar",
                             eventType = "calendar_event",
                             collectionMethod = "android_api",
-                            payloadJson = payload.toString()
+                            payloadJson = payload.toString(),
+                            eventId = deterministicEventId
                         )
                         collectedCount++
                     }
@@ -94,6 +99,7 @@ class CalendarCollector(context: Context) : BaseCollector(context) {
                 )
 
                 instCursor?.use {
+                    val instIdIdx = it.getColumnIndex(CalendarContract.Instances.EVENT_ID)
                     val titleIdx = it.getColumnIndex(CalendarContract.Instances.TITLE)
                     val locationIdx = it.getColumnIndex(CalendarContract.Instances.EVENT_LOCATION)
                     val beginIdx = it.getColumnIndex(CalendarContract.Instances.BEGIN)
@@ -101,6 +107,7 @@ class CalendarCollector(context: Context) : BaseCollector(context) {
                     val descIdx = it.getColumnIndex(CalendarContract.Instances.DESCRIPTION)
 
                     while (it.moveToNext()) {
+                        val rawId = if (instIdIdx != -1 && !it.isNull(instIdIdx)) it.getLong(instIdIdx) else 0L
                         val title = if (titleIdx != -1) it.getString(titleIdx) ?: "" else ""
                         val location = if (locationIdx != -1) it.getString(locationIdx) ?: "" else ""
                         val dtStart = if (beginIdx != -1 && !it.isNull(beginIdx)) it.getLong(beginIdx) else System.currentTimeMillis()
@@ -108,6 +115,8 @@ class CalendarCollector(context: Context) : BaseCollector(context) {
                         val description = if (descIdx != -1) it.getString(descIdx) ?: "" else ""
 
                         if (title.isNotBlank()) {
+                            val deterministicEventId = if (rawId > 0) "evt_cal_${rawId}_${dtStart}" else "evt_cal_${title.hashCode()}_${dtStart}"
+
                             val payload = JSONObject().apply {
                                 put("title", title)
                                 put("location", location)
@@ -122,7 +131,8 @@ class CalendarCollector(context: Context) : BaseCollector(context) {
                                 source = "calendar",
                                 eventType = "calendar_event",
                                 collectionMethod = "android_api",
-                                payloadJson = payload.toString()
+                                payloadJson = payload.toString(),
+                                eventId = deterministicEventId
                             )
                             collectedCount++
                         }

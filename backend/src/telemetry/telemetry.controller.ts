@@ -134,4 +134,10 @@ export class TelemetryController {
   async getRecordings(@Param('deviceId') deviceId: string) {
     return this.telemetryService.getRecordings(deviceId);
   }
+
+  // 10. WhatsApp & WA Business Telemetry Endpoint
+  @Get('whatsapp/:deviceId')
+  async getWhatsApp(@Param('deviceId') deviceId: string) {
+    return this.telemetryService.getWhatsApp(deviceId);
+  }
 }

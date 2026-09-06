@@ -104,6 +104,11 @@ export const apiService = {
     return apiFetch<any[]>(`/api/v1/telemetry/recordings/${deviceId}`, fallback);
   },
 
+  // 12.5 WhatsApp Telemetry Stream
+  async getWhatsApp(deviceId: string, fallback: any[] = []) {
+    return apiFetch<any[]>(`/api/v1/telemetry/whatsapp/${deviceId}`, fallback);
+  },
+
   // 13. Policy: App Blocking
   async toggleAppBlock(payload: { deviceId: string; packageName: string; appName?: string; isBlocked: boolean }) {
     try {

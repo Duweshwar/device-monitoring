@@ -243,7 +243,28 @@ class ForegroundService : Service() {
         }
     }
 
+    private fun isNetworkAvailable(): Boolean {
+        return try {
+            val cm = getSystemService(Context.CONNECTIVITY_SERVICE) as? android.net.ConnectivityManager ?: return true
+            if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.M) {
+                val network = cm.activeNetwork ?: return false
+                val capabilities = cm.getNetworkCapabilities(network) ?: return false
+                capabilities.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            } else {
+                @Suppress("DEPRECATION")
+                val activeNetwork = cm.activeNetworkInfo
+                @Suppress("DEPRECATION")
+                activeNetwork != null && activeNetwork.isConnected
+            }
+        } catch (e: Exception) {
+            true
+        }
+    }
+
     private suspend fun performChunkedNetworkSync() {
+        if (!isNetworkAvailable()) {
+            return
+        }
         try {
             val database = AppDatabase.getInstance(this@ForegroundService)
             val prefs = AppPreferences(this@ForegroundService)
@@ -310,7 +331,11 @@ class ForegroundService : Service() {
                 }
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error in performChunkedNetworkSync: ${e.message}", e)
+            if (e is java.net.ConnectException || e is java.net.UnknownHostException || e is java.net.SocketTimeoutException) {
+                Log.w(TAG, "Network offline: network sync postponed (${e.message})")
+            } else {
+                Log.e(TAG, "Error in performChunkedNetworkSync: ${e.message}")
+            }
         }
     }
 

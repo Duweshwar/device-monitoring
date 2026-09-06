@@ -95,7 +95,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
   ];
 
   return (
-    <aside className={`${isCollapsed ? 'w-20' : 'w-64'} bg-slate-900 text-slate-300 border-r border-slate-800 flex flex-col shrink-0 min-h-screen transition-all duration-300 relative z-20`}>
+    <aside className={`${isCollapsed ? 'w-20' : 'w-64'} bg-slate-900 text-slate-300 border-r border-slate-800 flex flex-col shrink-0 h-full overflow-y-auto transition-all duration-300 relative z-20`}>
       
       {/* Brand Header */}
       <div className={`p-4 border-b border-slate-800 flex items-center justify-between ${isCollapsed ? 'justify-center px-2' : ''}`}>
@@ -228,7 +228,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
 
       {/* Navigation Sections */}
-      <div className="flex-1 px-3 py-3 space-y-6 overflow-y-auto">
+      <div className="px-3 py-3 space-y-6">
         {navSections.map((section, idx) => (
           <div key={idx} className="space-y-1">
             {!isCollapsed && (

