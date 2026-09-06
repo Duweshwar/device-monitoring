@@ -5,6 +5,7 @@ import {
   PhoneCall, 
   Disc,
   MessageSquare, 
+  Youtube,
   Users, 
   Calendar as CalendarIcon,
   Image as ImageIcon, 
@@ -61,6 +62,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
       title: 'SOCIAL & MESSAGING',
       items: [
         { id: 'whatsapp', label: 'WhatsApp & WA Business', icon: MessageSquare, badge: 'Full' },
+        { id: 'youtube', label: 'YouTube Watch & Search', icon: Youtube, badge: 'New' },
         { id: 'instagram', label: 'Instagram DMs', icon: MessageSquare },
         { id: 'telegram', label: 'Telegram Messenger', icon: MessageSquare },
         { id: 'social_other', label: 'FB, Signal & Other Apps', icon: MessageSquare },

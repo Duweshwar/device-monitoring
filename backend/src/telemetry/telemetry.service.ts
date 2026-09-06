@@ -270,6 +270,36 @@ export class TelemetryService {
           }
         }
 
+        // 7.5 Populate Dedicated YouTubeHistory Table in PostgreSQL
+        if (evt.source === 'youtube' && evt.payload) {
+          const p = evt.payload;
+          const isSearch = (evt.eventType === 'youtube_search') || (p.type === 'search') || (p.title && p.title.includes('Search:'));
+          const type = isSearch ? 'search' : 'watch';
+          const title = p.videoTitle || p.title || (isSearch ? `Search: ${p.searchQuery || 'YouTube Search'}` : 'YouTube Video');
+          const channelName = p.channelName || null;
+          const channelHandle = p.channelHandle || null;
+          const searchQuery = p.searchQuery || (isSearch ? p.title?.replace('🔍 YouTube Search:', '')?.trim() : null);
+          const queryForUrl = channelHandle ? `${title} ${channelHandle}` : (channelName ? `${title} by ${channelName}` : title);
+          const url = p.url || `https://www.youtube.com/results?search_query=${encodeURIComponent(queryForUrl)}`;
+          const ts = new Date(evt.timestamp || Date.now());
+
+          if (title.trim().length > 0) {
+            await this.prisma.youTubeHistory.create({
+              data: {
+                deviceId,
+                type,
+                title,
+                channelName,
+                channelHandle,
+                searchQuery,
+                url,
+                collectionMethod: safeMethod,
+                timestamp: ts
+              }
+            }).catch((e) => console.warn('[YouTubeHistory Table Insert Warning]:', e.message));
+          }
+        }
+
         // 8. Populate Dedicated CalendarEvent Table in PostgreSQL via Raw Query with Upsert Deduplication
         if (evt.source === 'calendar' && evt.payload) {
           const title = evt.payload.title || 'Calendar Appointment';
@@ -1063,6 +1093,124 @@ export class TelemetryService {
         timestamp: new Date(now - 10800000).toLocaleString(),
         rawTimestamp: now - 10800000,
         chatTitle: 'Study Group'
+      }
+    ];
+  }
+
+  // 11. YouTube History Telemetry Endpoint (Queries Dedicated YouTubeHistory Table with Fallback)
+  async getYouTube(deviceId: string) {
+    try {
+      const dedicated = await this.prisma.youTubeHistory.findMany({
+        where: { deviceId },
+        orderBy: { timestamp: 'desc' },
+        take: 300
+      });
+
+      if (dedicated && dedicated.length > 0) {
+        const rawList = dedicated.map((y) => ({
+          id: y.id,
+          type: y.type,
+          title: y.title,
+          channelName: y.channelName || '',
+          channelHandle: y.channelHandle || '',
+          searchQuery: y.searchQuery || '',
+          url: y.url,
+          timestamp: new Date(y.timestamp).toLocaleString(),
+          rawTimestamp: new Date(y.timestamp).getTime()
+        }));
+
+        const deduplicated: typeof rawList = [];
+        for (const item of rawList) {
+          const isDup = deduplicated.some(
+            (e) => e.type === item.type && e.title === item.title && Math.abs(e.rawTimestamp - item.rawTimestamp) < 5000
+          );
+          if (!isDup) deduplicated.push(item);
+        }
+        return deduplicated;
+      }
+    } catch (e) {
+      console.warn('[getYouTube dedicated query error]:', e);
+    }
+
+    // Fallback to NormalizedEvent if dedicated table is empty
+    try {
+      const events = await this.prisma.normalizedEvent.findMany({
+        where: {
+          deviceId,
+          OR: [
+            { source: 'youtube' },
+            { source: 'web_history', payload: { path: ['domain'], equals: 'youtube.com' } }
+          ]
+        },
+        orderBy: { timestamp: 'desc' },
+        take: 300
+      });
+
+      if (events && events.length > 0) {
+        const rawList = events.map((evt) => {
+          const p = (evt.payload as any) || {};
+          const isSearch = (evt.eventType === 'youtube_search') || (p.type === 'search') || (p.title && p.title.includes('Search:'));
+          
+          return {
+            id: evt.id,
+            type: isSearch ? 'search' : 'watch',
+            title: p.videoTitle || p.title || 'YouTube Content',
+            channelName: p.channelName || 'YouTube Creator',
+            channelHandle: p.channelHandle || '',
+            searchQuery: p.searchQuery || p.title?.replace('🔍 YouTube Search:', '')?.trim() || '',
+            url: p.url || `https://www.youtube.com/results?search_query=${encodeURIComponent(p.title || '')}`,
+            timestamp: new Date(evt.timestamp).toLocaleString(),
+            rawTimestamp: new Date(evt.timestamp).getTime()
+          };
+        });
+
+        // Deduplicate adjacent events
+        const deduplicated: typeof rawList = [];
+        for (const item of rawList) {
+          const isDup = deduplicated.some(
+            (e) => e.type === item.type && e.title === item.title && Math.abs(e.rawTimestamp - item.rawTimestamp) < 5000
+          );
+          if (!isDup) deduplicated.push(item);
+        }
+
+        return deduplicated;
+      }
+    } catch (e) {
+      console.warn('[getYouTube fallback error]:', e);
+    }
+
+    // Fallback demo data if no live YouTube events logged yet
+    const now = Date.now();
+    return [
+      {
+        id: 'yt_demo_1',
+        type: 'watch',
+        title: 'Building a Real-Time Android & Node.js App',
+        channelName: 'Traversy Media',
+        searchQuery: '',
+        url: 'https://www.youtube.com/results?search_query=Building+a+Real-Time+Android+%26+Node.js+App',
+        timestamp: new Date(now - 180000).toLocaleString(),
+        rawTimestamp: now - 180000
+      },
+      {
+        id: 'yt_demo_2',
+        type: 'search',
+        title: '🔍 YouTube Search: Kotlin AccessibilityService guide',
+        channelName: '',
+        searchQuery: 'Kotlin AccessibilityService guide',
+        url: 'https://www.youtube.com/results?search_query=Kotlin+AccessibilityService+guide',
+        timestamp: new Date(now - 600000).toLocaleString(),
+        rawTimestamp: now - 600000
+      },
+      {
+        id: 'yt_demo_3',
+        type: 'watch',
+        title: 'M3 Pro MacBook Review: 1 Month Later',
+        channelName: 'Marques Brownlee',
+        searchQuery: '',
+        url: 'https://www.youtube.com/results?search_query=M3+Pro+MacBook+Review',
+        timestamp: new Date(now - 3600000).toLocaleString(),
+        rawTimestamp: now - 3600000
       }
     ];
   }

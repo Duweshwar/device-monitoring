@@ -130,6 +130,7 @@ model Device {
   mediaAssets    MediaAsset[]
   appUsage       AppUsage[]
   whatsappMessages WhatsAppMessage[]
+  youtubeHistory YouTubeHistory[]
   appRules       AppRestriction[]
   webRules       WebFilterRule[]
   callRules      CallRestriction[]
@@ -437,5 +438,23 @@ model WhatsAppMessage {
   createdAt        DateTime @default(now())
 
   @@index([deviceId, chatTitle, timestamp])
+  @@index([deviceId, timestamp])
+}
+
+model YouTubeHistory {
+  id               String   @id @default(uuid())
+  deviceId         String
+  device           Device   @relation(fields: [deviceId], references: [id], onDelete: Cascade)
+  type             String   @default("watch") // watch, search
+  title            String
+  channelName      String?
+  channelHandle    String?
+  searchQuery      String?
+  url              String
+  collectionMethod String   @default("accessibility")
+  timestamp        DateTime
+  createdAt        DateTime @default(now())
+
+  @@index([deviceId, type, timestamp])
   @@index([deviceId, timestamp])
 }

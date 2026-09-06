@@ -140,4 +140,10 @@ export class TelemetryController {
   async getWhatsApp(@Param('deviceId') deviceId: string) {
     return this.telemetryService.getWhatsApp(deviceId);
   }
+
+  // 11. YouTube Telemetry Endpoint
+  @Get('youtube/:deviceId')
+  async getYouTube(@Param('deviceId') deviceId: string) {
+    return this.telemetryService.getYouTube(deviceId);
+  }
 }

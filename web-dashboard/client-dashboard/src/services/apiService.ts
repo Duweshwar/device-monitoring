@@ -109,6 +109,11 @@ export const apiService = {
     return apiFetch<any[]>(`/api/v1/telemetry/whatsapp/${deviceId}`, fallback);
   },
 
+  // 12.6 YouTube Telemetry Stream
+  async getYouTube(deviceId: string, fallback: any[] = []) {
+    return apiFetch<any[]>(`/api/v1/telemetry/youtube/${deviceId}`, fallback);
+  },
+
   // 13. Policy: App Blocking
   async toggleAppBlock(payload: { deviceId: string; packageName: string; appName?: string; isBlocked: boolean }) {
     try {
