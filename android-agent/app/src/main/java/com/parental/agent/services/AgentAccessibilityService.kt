@@ -563,6 +563,30 @@ class AgentAccessibilityService : AccessibilityService() {
                     }
                 }
 
+                // 2. Check Shorts player containers (reel_player_page_container, shorts_container, reel_recycler_view)
+                if (videoTitle.isBlank()) {
+                    val shortsContainers = listOf(
+                        "com.google.android.youtube:id/reel_player_page_container",
+                        "com.google.android.youtube:id/shorts_container",
+                        "com.google.android.youtube:id/reel_recycler_view",
+                        "com.google.android.youtube:id/reel_video_player"
+                    )
+                    for (sId in shortsContainers) {
+                        val sNodes = windowRoot.findAccessibilityNodeInfosByViewId(sId)
+                        if (!sNodes.isNullOrEmpty()) {
+                            for (sNode in sNodes) {
+                                val candidate = extractShortsTitleFromContainer(sNode)
+                                if (candidate.isNotBlank() && isValidYouTubeVideoTitle(candidate) && !isNodeInAdContainer(sNode)) {
+                                    videoTitle = candidate
+                                    Log.d(TAG, "🔎 YOUTUBE SHORTS TITLE DETECTED: '$candidate'")
+                                    break
+                                }
+                            }
+                        }
+                        if (videoTitle.isNotBlank()) break
+                    }
+                }
+
                 if (videoTitle.isNotBlank()) {
                     if (isYouTubeAd(videoTitle, windowRoot)) {
                         Log.d(TAG, "⏭️ SKIPPING YOUTUBE SPONSORED AD: Title='$videoTitle'")
@@ -664,14 +688,17 @@ class AgentAccessibilityService : AccessibilityService() {
     }
 
     private fun isYouTubeAd(title: String, rootNode: AccessibilityNodeInfo): Boolean {
-        val lower = title.lowercase().trim()
+        val lower = title.lowercase().trim().replace("\n", " ")
         if (lower.startsWith("sponsored") ||
             lower.contains("ad •") ||
             lower.contains("ad ·") ||
             lower.startsWith("ad 1 of") ||
             lower.startsWith("ad 2 of") ||
             lower.contains("skip ad") ||
-            lower.contains("visit advertiser")) {
+            lower.contains("visit advertiser") ||
+            lower.endsWith(" ad") ||
+            lower.startsWith("ad ") ||
+            lower.contains(" ad ")) {
             return true
         }
 
@@ -690,6 +717,24 @@ class AgentAccessibilityService : AccessibilityService() {
             }
         }
         return false
+    }
+
+    private fun extractShortsTitleFromContainer(node: AccessibilityNodeInfo?): String {
+        if (node == null) return ""
+        val text = node.text?.toString()?.trim() ?: ""
+        val cd = node.contentDescription?.toString()?.trim() ?: ""
+        val candidateText = text.ifBlank { cd }
+
+        if (candidateText.isNotBlank() && isValidYouTubeVideoTitle(candidateText) && !candidateText.startsWith("@")) {
+            return candidateText
+        }
+
+        for (i in 0 until node.childCount) {
+            val child = node.getChild(i) ?: continue
+            val result = extractShortsTitleFromContainer(child)
+            if (result.isNotBlank()) return result
+        }
+        return ""
     }
 
     private fun isParentSuggestionNode(node: AccessibilityNodeInfo?): Boolean {
@@ -818,42 +863,36 @@ class AgentAccessibilityService : AccessibilityService() {
             scanLikesViewsAnchors(targetNode)
         }
 
-        // 4. Smart fallback: If handle is found but name is still blank, derive clean name from handle (e.g. "@zeemusiccompany" -> "zeemusiccompany")
-        if (foundName.isBlank() && foundHandle.isNotBlank()) {
-            foundName = foundHandle.removePrefix("@").trim()
+        // 4. Smart fallback: If handle is found, ensure foundName is populated cleanly without leading @
+        if (foundHandle.isNotBlank()) {
+            if (foundName.isBlank() || foundName.startsWith("@")) {
+                foundName = foundHandle.removePrefix("@").trim()
+            }
         }
 
         return YouTubeChannelInfo(name = foundName, handle = foundHandle)
     }
 
-    private fun printAccessibilityNodeTree(node: AccessibilityNodeInfo?, depth: Int) {
-        if (node == null || depth > 25) return
-        val indent = " |".repeat(Math.min(depth, 25))
-        val viewId = node.viewIdResourceName ?: "no_id"
-        val text = node.text?.toString()?.trim() ?: ""
-        val cd = node.contentDescription?.toString()?.trim() ?: ""
-        
-        if (text.isNotBlank() || cd.isNotBlank()) {
-            Log.d(TAG, "TREE$indent ⭐ [$viewId] text='$text' cd='$cd'")
-        } else if (viewId != "no_id") {
-            Log.d(TAG, "TREE$indent [$viewId]")
-        }
-
-        for (i in 0 until node.childCount) {
-            val child = node.getChild(i) ?: continue
-            printAccessibilityNodeTree(child, depth + 1)
-        }
-    }
-
     private fun isValidYouTubeVideoTitle(title: String): Boolean {
         if (title.length < 3) return false
-        val lower = title.lowercase().trim()
+        val lower = title.lowercase().trim().replace("\n", " ")
         val ignoredSystemLabels = setOf(
             "youtube", "search", "home", "shorts", "subscriptions", "library",
             "notifications", "cast", "share", "like", "dislike", "subscribe",
-            "comments", "playlist", "mix", "downloads", "your videos", "sponsored", "skip ad"
+            "comments", "playlist", "mix", "downloads", "your videos", "sponsored", "skip ad",
+            "video progress", "shop", "shop, ,", "remix", "sound"
         )
         if (ignoredSystemLabels.contains(lower)) return false
+        if (lower.startsWith("@")) return false
+        if (lower.startsWith("go to channel")) return false
+        if (lower.startsWith("subscribe to")) return false
+        if (lower.startsWith("like this video")) return false
+        if (lower.startsWith("dislike this video")) return false
+        if (lower.startsWith("share this video")) return false
+        if (lower.startsWith("video progress")) return false
+        if (lower.startsWith("shop")) return false
+        if (lower.endsWith(" ad") || lower.startsWith("ad ") || lower.contains(" ad ") || lower == "ad") return false
+        if (lower.startsWith("view ") && lower.contains("comments")) return false
         if (lower.startsWith("sponsored") || lower.contains("skip ad") || lower.contains("visit advertiser")) return false
         if (lower.matches(Regex(".*\\d+:\\d+.*"))) return false
         if (lower.matches(Regex(".*\\d+\\s*(views|subscribers|likes).*"))) return false
