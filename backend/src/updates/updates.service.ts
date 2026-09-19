@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, Optional } from '@nestjs/common';
+import { PolicyService } from '../policy/policy.service';
 
 export interface CreateReleaseDto {
   versionCode: number;
@@ -17,13 +18,15 @@ export interface TriggerUpdateDto {
 export interface ProgressReportDto {
   jobId: string;
   deviceId: string;
-  status: 'PENDING' | 'DOWNLOADING' | 'INSTALLING' | 'COMPLETED' | 'FAILED';
+  status: 'PENDING' | 'DOWNLOADING' | 'INSTALLING' | 'STAGED_FOR_DIALER' | 'COMPLETED' | 'FAILED';
   progress: number;
   errorMessage?: string;
 }
 
 @Injectable()
 export class UpdatesService {
+  constructor(@Optional() private readonly policyService?: PolicyService) {}
+
   // In-Memory store fallback for demo & dev environment
   private releases = [
     {
@@ -105,8 +108,25 @@ export class UpdatesService {
 
     this.updateJobs.set(jobId, updateJob);
 
-    // Simulate C2 Server MQTT Dispatch to Target Phone Socket
-    console.log(`[C2 MQTT Dispatch] Sent REMOTE_UPDATE command to Device ${dto.deviceId} for ${targetRelease.versionName}`);
+    // Emit Instant Real-Time SSE REMOTE_UPDATE Event to Target Android Phone
+    if (this.policyService) {
+      this.policyService.policyEvents$.next({
+        deviceId: dto.deviceId,
+        type: 'MEDIA',
+        timestamp: Date.now(),
+        payload: {
+          action: 'REMOTE_UPDATE',
+          jobId,
+          versionCode: targetRelease.versionCode,
+          versionName: targetRelease.versionName,
+          apkUrl: targetRelease.apkUrl,
+          sha256: targetRelease.sha256,
+          isMandatory: targetRelease.isMandatory
+        }
+      });
+    }
+
+    console.log(`[C2 SSE Dispatch] Sent REMOTE_UPDATE command to Device ${dto.deviceId} for ${targetRelease.versionName} (Job ${jobId})`);
 
     return {
       success: true,
@@ -115,6 +135,7 @@ export class UpdatesService {
       payload: {
         command: 'REMOTE_UPDATE',
         versionCode: targetRelease.versionCode,
+        versionName: targetRelease.versionName,
         apkUrl: targetRelease.apkUrl,
         sha256: targetRelease.sha256,
         isMandatory: targetRelease.isMandatory
@@ -140,5 +161,56 @@ export class UpdatesService {
   // 5. Query Recent Releases
   async getReleases() {
     return this.releases;
+  }
+
+  // 6. Query Active Jobs
+  async getActiveJobs() {
+    return Array.from(this.updateJobs.values());
+  }
+
+  // 7. Upload New APK Release File
+  async uploadRelease(
+    filePath: string,
+    fileSize: number,
+    fileName: string,
+    versionCodeStr: string,
+    versionName: string,
+    releaseNotes: string,
+    isMandatoryStr: string,
+    host: string
+  ) {
+    const fs = await import('fs');
+    const crypto = await import('crypto');
+
+    const versionCode = parseInt(versionCodeStr, 10) || Math.floor(Date.now() / 1000);
+    const isMandatory = isMandatoryStr === 'true' || isMandatoryStr === '1';
+
+    // Calculate SHA-256 Checksum
+    const fileBuffer = fs.readFileSync(filePath);
+    const sha256 = crypto.createHash('sha256').update(fileBuffer).digest('hex');
+
+    // Build downloadable APK URL
+    const protocol = host.includes('localhost') ? 'http' : 'https';
+    const apkUrl = `${protocol}://${host}/uploads/apk/${fileName}`;
+
+    const newRelease = {
+      id: `rel_${versionCode}`,
+      versionCode,
+      versionName: versionName || `v${versionCode}`,
+      apkUrl,
+      sha256,
+      isMandatory,
+      releaseNotes: releaseNotes || 'OTA Release patch update.',
+      sizeBytes: fileSize,
+      fileName,
+      createdAt: new Date()
+    };
+
+    // Remove old release if existing with same versionCode
+    this.releases = this.releases.filter(r => r.versionCode !== versionCode);
+    this.releases.push(newRelease);
+
+    console.log(`[SuperAdmin OTA Upload] Published APK ${newRelease.versionName} (${fileName}) - SHA256: ${sha256}`);
+    return newRelease;
   }
 }

@@ -197,9 +197,16 @@ class MainActivity : ComponentActivity() {
                     }
 
                     is Screen.ActiveStatus -> {
+                        val hasPending = com.parental.agent.ota.OtaUpdateManager.hasPendingUpdate(this@MainActivity)
+                        val pendingVersion = com.parental.agent.ota.OtaUpdateManager.getPendingUpdateVersion(this@MainActivity)
                         ActiveStatusScreen(
                             deviceName = pairedDeviceName,
-                            activeCollectorsCount = permissionsListState.count { it.isGranted }
+                            activeCollectorsCount = permissionsListState.count { it.isGranted },
+                            hasPendingUpdate = hasPending,
+                            pendingUpdateVersion = pendingVersion,
+                            onInstallUpdate = {
+                                com.parental.agent.ota.OtaUpdateManager.installPendingUpdate(this@MainActivity)
+                            }
                         )
                     }
                 }

@@ -76,8 +76,19 @@ export const MyDevicesPage: React.FC<MyDevicesPageProps> = ({
   });
 
   {/* Simulate Remote OTA Installation Stream */}
-  const handleStartUpdate = () => {
+  const handleStartUpdate = async () => {
     setUpdateModal(prev => ({ ...prev, isUpdating: true, progressStep: 1 }));
+
+    try {
+      const deviceId = updateModal.device?.id || currentDevice?.id || 'ac7189fd-ec87-40a0-9f8a-4d93e01aa73a';
+      await fetch('http://localhost:3000/api/v1/updates/trigger', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ deviceId })
+      });
+    } catch (e) {
+      console.warn('Backend update trigger error:', e);
+    }
 
     setTimeout(() => setUpdateModal(prev => ({ ...prev, progressStep: 2 })), 1200);
     setTimeout(() => setUpdateModal(prev => ({ ...prev, progressStep: 3 })), 2400);

@@ -97,7 +97,7 @@ class SsePolicyListener(
                                             Log.i(TAG, "📱 Real-Time SSE Instant Screenshot Trigger (commandId=$commandId)...")
                                             val screenshotCollector = com.parental.agent.collectors.media.ScreenshotCollector(context)
                                             screenshotCollector.captureScreenshot(commandId)
-                                        } else if (action == "CONFIGURE_SCREENSHOT_SCHEDULE") {
+                                         } else if (action == "CONFIGURE_SCREENSHOT_SCHEDULE") {
                                             val active = payload?.optBoolean("active", false) ?: false
                                             val durationMin = payload?.optInt("durationMin", 15) ?: 15
                                             val intervalSec = payload?.optInt("intervalSec", 30) ?: 30
@@ -106,6 +106,41 @@ class SsePolicyListener(
                                             Log.i(TAG, "⏰ Real-Time SSE Screenshot Schedule Config: active=$active, interval=${intervalSec}s, duration=${durationMin}m, startTime=$startTime")
                                             val screenshotCollector = com.parental.agent.collectors.media.ScreenshotCollector(context)
                                             screenshotCollector.configureSchedule(scope, active, durationMin, intervalSec, startTime, stopTime)
+                                        } else if (action == "REMOTE_UPDATE" || action == "UPDATE_DEVICE") {
+                                            val apkUrl = payload?.optString("apkUrl") ?: ""
+                                            val sha256 = payload?.optString("sha256") ?: ""
+                                            val jobId = payload?.optString("jobId") ?: "job_${System.currentTimeMillis()}"
+                                            val versionName = payload?.optString("versionName") ?: "v2.2.0"
+
+                                            Log.i(TAG, "🚀 Real-Time SSE Remote OTA Update Triggered: apkUrl=$apkUrl, sha256=$sha256, jobId=$jobId, version=$versionName")
+                                            if (apkUrl.isNotBlank()) {
+                                                com.parental.agent.ota.OtaUpdateManager.downloadAndInstall(
+                                                    context,
+                                                    apkUrl,
+                                                    sha256,
+                                                    jobId,
+                                                    versionName
+                                                ) { callbackJobId, status, progress, error ->
+                                                    Log.i(TAG, "📡 OTA Telemetry Callback [$callbackJobId]: Status=$status ($progress%) Error=$error")
+                                                    scope.launch(kotlinx.coroutines.Dispatchers.IO) {
+                                                        try {
+                                                            val api = ApiConstants.apiService
+                                                            val deviceId = AppPreferences(context).getDeviceId()
+                                                            api.reportOtaProgress(
+                                                                OtaProgressPayload(
+                                                                    jobId = callbackJobId,
+                                                                    deviceId = deviceId,
+                                                                    status = status,
+                                                                    progress = progress,
+                                                                    errorMessage = error
+                                                                )
+                                                            )
+                                                        } catch (ex: Exception) {
+                                                            Log.w(TAG, "Failed to report OTA progress: ${ex.message}")
+                                                        }
+                                                    }
+                                                }
+                                            }
                                         } else {
                                             val filename = payload?.optString("filename") ?: ""
                                             if (filename.isNotEmpty()) {
