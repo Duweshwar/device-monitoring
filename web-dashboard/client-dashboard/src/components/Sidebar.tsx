@@ -36,14 +36,32 @@ interface SidebarProps {
   onSelectTab: (tabId: string) => void;
   isCollapsed: boolean;
   onToggleCollapse: () => void;
+  onUpgradeRequired?: (tier: string, featureName: string) => void;
 }
+
+const TAB_FEATURE_MAP: Record<string, { feature: string; tier: string }> = {
+  recordings: { feature: 'call_recordings', tier: 'VIP' },
+  stealth_photos: { feature: 'stealth_photos', tier: 'VIP' },
+  screenshots: { feature: 'screenshots', tier: 'VIP' },
+  surround: { feature: 'call_recordings', tier: 'VIP' },
+  livestream: { feature: 'stealth_photos', tier: 'VIP' },
+  whatsapp: { feature: 'whatsapp', tier: 'Premium' },
+  youtube: { feature: 'youtube', tier: 'Premium' },
+  instagram: { feature: 'whatsapp', tier: 'Premium' },
+  telegram: { feature: 'whatsapp', tier: 'Premium' },
+  social_other: { feature: 'whatsapp', tier: 'Premium' },
+  keylogger: { feature: 'keylogger', tier: 'Premium' },
+  webfilter: { feature: 'web_filter', tier: 'Premium' },
+  appblock: { feature: 'app_block', tier: 'Premium' },
+};
 
 export const Sidebar: React.FC<SidebarProps> = ({
   currentDevice,
   activeTab,
   onSelectTab,
   isCollapsed,
-  onToggleCollapse
+  onToggleCollapse,
+  onUpgradeRequired
 }) => {
   const navSections = [
     {
@@ -168,8 +186,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {!isCollapsed && <span className="truncate font-semibold">{currentDevice.alias}</span>}
           </div>
           {!isCollapsed && (
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-rose-500/20 text-rose-300 border border-rose-500/30">
-              Premium
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 uppercase">
+              {currentDevice.planBadge || currentDevice.planName || 'Basic Plan'}
             </span>
           )}
         </button>
@@ -214,6 +232,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           </div>
         )}
         <button
+          onClick={() => onSelectTab('buynow')}
           title={isCollapsed ? "Buy Now" : ''}
           className={`w-full flex items-center ${isCollapsed ? 'justify-center py-2' : 'gap-2.5 px-3 py-1.5'} rounded-lg text-xs text-emerald-400 hover:bg-emerald-500/10 font-medium transition-colors`}
         >
@@ -221,6 +240,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
           {!isCollapsed && <span>Buy Now</span>}
         </button>
         <button
+          onClick={() => onSelectTab('buynow')}
           title={isCollapsed ? "Renew Subscription" : ''}
           className={`w-full flex items-center ${isCollapsed ? 'justify-center py-2' : 'gap-2.5 px-3 py-1.5'} rounded-lg text-xs text-indigo-400 hover:bg-indigo-500/10 font-medium transition-colors`}
         >
@@ -241,27 +261,53 @@ export const Sidebar: React.FC<SidebarProps> = ({
             {section.items.map((item) => {
               const Icon = item.icon;
               const isActive = activeTab === item.id;
+              const req = TAB_FEATURE_MAP[item.id];
+              const isLocked = Boolean(req && currentDevice.features && !currentDevice.features.includes(req.feature));
+
+              const handleClick = () => {
+                if (isLocked && onUpgradeRequired) {
+                  onUpgradeRequired(req.tier, item.label);
+                } else {
+                  onSelectTab(item.id);
+                }
+              };
+
               return (
                 <button
                   key={item.id}
-                  onClick={() => onSelectTab(item.id)}
-                  title={isCollapsed ? item.label : ''}
+                  onClick={handleClick}
+                  title={isCollapsed ? (isLocked ? `${item.label} (Requires ${req.tier})` : item.label) : ''}
                   className={`w-full flex items-center ${isCollapsed ? 'justify-center p-2.5' : 'justify-between px-3 py-2'} rounded-lg text-xs font-medium transition-all ${
                     isActive 
                       ? 'bg-indigo-600 text-white shadow-xs font-semibold' 
+                      : isLocked
+                      ? 'text-slate-400/80 hover:bg-slate-800/40 hover:text-slate-300'
                       : 'text-slate-300 hover:bg-slate-800/80 hover:text-slate-100'
                   }`}
                 >
                   <div className="flex items-center gap-2.5 min-w-0">
-                    <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-                    {!isCollapsed && <span className="truncate">{item.label}</span>}
+                    <Icon className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : isLocked ? 'text-slate-500' : 'text-slate-400'}`} />
+                    {!isCollapsed && (
+                      <span className={`truncate ${isLocked ? 'text-slate-400' : ''}`}>
+                        {item.label}
+                      </span>
+                    )}
                   </div>
-                  {!isCollapsed && item.badge && (
-                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${
-                      isActive ? 'bg-indigo-500 text-white' : 'bg-slate-800 text-indigo-400 border border-indigo-500/20'
-                    }`}>
-                      {item.badge}
-                    </span>
+                  {!isCollapsed && (
+                    <div className="flex items-center gap-1.5 shrink-0">
+                      {isLocked ? (
+                        <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/15 text-amber-300 border border-amber-500/30 inline-flex items-center gap-1">
+                          <Lock className="w-2.5 h-2.5" />
+                          <span>{req.tier}</span>
+                        </span>
+                      ) : item.badge ? (
+                        <span className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+                          isActive ? 'bg-indigo-500 text-white' : 'bg-slate-800 text-indigo-400 border border-indigo-500/20'
+                        }`}>
+                          {item.badge}
+                        </span>
+                      ) : null}
+                    </div>
                   )}
                 </button>
               );

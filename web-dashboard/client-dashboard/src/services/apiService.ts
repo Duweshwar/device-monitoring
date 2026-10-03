@@ -7,16 +7,30 @@ async function apiFetch<T>(endpoint: string, fallbackData: T, customHeaders: Rec
       ? cleanEndpoint 
       : `/api/v1${cleanEndpoint.replace(/^\/api/, '')}`;
 
-    const token = localStorage.getItem('childcare_auth_token') || 'jwt_demo_token';
+    const token = localStorage.getItem('childcare_auth_token');
+
+    // If no token exists and endpoint is protected, trigger unauthorized redirect immediately
+    const isPublicEndpoint = path.includes('/plans') || path.includes('/auth/') || path.includes('/payments/');
+    if (!token && !isPublicEndpoint) {
+      window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+      return fallbackData;
+    }
 
     const response = await fetch(path, {
       headers: {
         'Content-Type': 'application/json',
         'Accept': 'application/json',
-        'Authorization': `Bearer ${token}`,
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
         ...customHeaders
       }
     });
+
+    if (response.status === 401) {
+      console.warn(`[Dashboard API] HTTP 401 Unauthorized for ${path}. Redirecting to login.`);
+      localStorage.removeItem('childcare_auth_token');
+      window.dispatchEvent(new CustomEvent('auth:unauthorized'));
+      return fallbackData;
+    }
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -41,21 +55,95 @@ export const apiService = {
     return apiFetch<any[]>('/api/v1/licenses/my-licenses', fallback);
   },
 
-  // 3. Purchase License Simulation
-  async purchaseLicense(payload: { email: string; name?: string; packageName: string; months: number; amount: number }) {
+  // 3. Dynamic Plan Tiers & Feature Matrix
+  async getPlans() {
+    return apiFetch<any[]>('/api/v1/plans', [
+      {
+        code: 'basic',
+        name: 'Basic Plan',
+        badge: null,
+        pricing: { 1: 1499, 3: 2999, 12: 5999 },
+        features: ['calls', 'sms', 'contacts', 'location', 'apps', 'app_usage', 'calendar']
+      },
+      {
+        code: 'premium',
+        name: 'Premium Plan',
+        badge: 'Most Popular',
+        pricing: { 1: 1999, 3: 3999, 12: 7999 },
+        features: ['calls', 'sms', 'contacts', 'location', 'apps', 'app_usage', 'calendar', 'web_history', 'web_filter', 'app_block', 'call_block', 'keylogger', 'whatsapp', 'youtube']
+      },
+      {
+        code: 'vip',
+        name: 'VIP Plan',
+        badge: 'Best Value',
+        pricing: { 1: 2999, 3: 5999, 12: 11999 },
+        features: ['calls', 'sms', 'contacts', 'location', 'apps', 'app_usage', 'calendar', 'web_history', 'web_filter', 'app_block', 'call_block', 'keylogger', 'whatsapp', 'youtube', 'screenshots', 'stealth_photos', 'call_recordings', 'device_lock']
+      }
+    ]);
+  },
+
+  // 4. Create Real Cashfree PG Order
+  async createPaymentOrder(payload: {
+    planCode: string;
+    durationMonths: number;
+    quantity: number;
+    customerName: string;
+    customerEmail: string;
+    customerPhone: string;
+    customerAddress?: string;
+    addAssistance?: boolean;
+  }) {
+    try {
+      const response = await fetch('/api/v1/payments/create-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      return await response.json();
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Payment network error' };
+    }
+  },
+
+  // 5. Verify & Complete Paid Order (Provisions Licenses in DB)
+  async verifyPaymentOrder(orderId: string, referenceId?: string) {
+    try {
+      const response = await fetch(`/api/v1/payments/verify-order/${orderId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ referenceId }),
+      });
+      return await response.json();
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Order verification error' };
+    }
+  },
+
+  // 6. Check Order Status
+  async getOrderStatus(orderId: string) {
+    try {
+      const response = await fetch(`/api/v1/payments/order-status/${orderId}`);
+      return await response.json();
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Status check error' };
+    }
+  },
+
+  // 7. Unlink License from Device (Unlimited Device Change)
+  async unlinkLicense(licenseKey: string) {
     try {
       const token = localStorage.getItem('childcare_auth_token') || 'jwt_demo_token';
-      const response = await fetch('/api/v1/licenses/purchase-simulate', {
+      const response = await fetch('/api/v1/licenses/unlink', {
         method: 'POST',
-        headers: { 
+        headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`
         },
-        body: JSON.stringify(payload)
+        body: JSON.stringify({ licenseKey })
       });
       return await response.json();
-    } catch (err) {
-      return { success: false, message: 'Connection error' };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'License unlink failed' };
     }
   },
 

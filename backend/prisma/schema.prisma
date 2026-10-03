@@ -59,6 +59,7 @@ model User {
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [id])
   licenses       License[]
+  paymentOrders  PaymentOrder[]
   createdAt      DateTime      @default(now())
   updatedAt      DateTime      @updatedAt
   auditLogs      AuditLog[]
@@ -72,6 +73,7 @@ model License {
   id               String        @id @default(uuid())
   licenseKey       String        @unique
   planName         String        // e.g. "ChildCare All-in-One Pro 1-Year", "Family 3-Device Plan"
+  planCode         String        @default("basic") // "basic" | "premium" | "vip"
   userId           String
   user             User          @relation(fields: [userId], references: [id], onDelete: Cascade)
   assignedDeviceId String?       @unique
@@ -83,6 +85,7 @@ model License {
 
   @@index([userId])
   @@index([licenseKey])
+  @@index([planCode])
 }
 
 model Family {
@@ -457,4 +460,52 @@ model YouTubeHistory {
 
   @@index([deviceId, type, timestamp])
   @@index([deviceId, timestamp])
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+model PlanTier {
+  id          String   @id @default(uuid())
+  code        String   @unique // e.g. "basic", "premium", "vip"
+  name        String   // e.g. "Basic Plan", "Premium Plan", "VIP Plan"
+  badge       String?  // e.g. "Most Popular", "Best Value"
+  description String
+  features    Json     // string[] of feature keys
+  pricing     Json     // Record<string, number>: { "1": 1499, "3": 2999, ... }
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model PaymentOrder {
+  id               String        @id @default(uuid())
+  orderId          String        @unique
+  paymentSessionId String?
+  amount           Float
+  currency         String        @default("INR")
+  status           PaymentStatus @default(PENDING)
+  planCode         String        // "basic" | "premium" | "vip"
+  planName         String
+  durationMonths   Int           @default(12)
+  quantity         Int           @default(1)
+  customerName     String
+  customerEmail    String
+  customerPhone    String
+  customerAddress  String?
+  referenceId      String?       // Cashfree reference/payment ID
+  paymentMethod    String?
+  userId           String?
+  user             User?         @relation(fields: [userId], references: [id])
+  metadata         Json?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+
+  @@index([orderId])
+  @@index([customerEmail])
 }

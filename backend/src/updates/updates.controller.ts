@@ -7,29 +7,35 @@ import {
   UseInterceptors, 
   UploadedFile, 
   Req, 
-  BadRequestException 
+  BadRequestException,
+  UseGuards
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { extname, join } from 'path';
+import { extname, join, basename } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { Request } from 'express';
 import { UpdatesService, CreateReleaseDto, TriggerUpdateDto, ProgressReportDto } from './updates.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Public } from '../auth/decorators/public.decorator';
 
 const apkUploadDir = join(process.cwd(), 'uploads', 'apk');
 if (!existsSync(apkUploadDir)) {
   mkdirSync(apkUploadDir, { recursive: true });
 }
 
+@UseGuards(JwtAuthGuard)
 @Controller('updates')
 export class UpdatesController {
   constructor(private readonly updatesService: UpdatesService) {}
 
+  @Public()
   @Get('releases')
   async getReleases() {
     return this.updatesService.getReleases();
   }
 
+  @Public()
   @Get('jobs')
   async getJobs() {
     return this.updatesService.getActiveJobs();
@@ -48,9 +54,9 @@ export class UpdatesController {
           cb(null, apkUploadDir);
         },
         filename: (req, file, cb) => {
-          const vName = req.body?.versionName || 'update';
-          const cleanName = vName.replace(/[^a-zA-Z0-9._-]/g, '_');
-          const ext = extname(file.originalname) || '.apk';
+          const rawVName = req.body?.versionName || 'update';
+          const cleanName = basename(rawVName).replace(/[^a-zA-Z0-9._-]/g, '_');
+          const ext = extname(basename(file.originalname)) || '.apk';
           cb(null, `agent-${cleanName}-${Date.now()}${ext}`);
         },
       }),
@@ -77,6 +83,7 @@ export class UpdatesController {
     );
   }
 
+  @Public()
   @Get('check')
   async checkUpdate(
     @Query('deviceId') deviceId: string,
@@ -91,6 +98,7 @@ export class UpdatesController {
     return this.updatesService.triggerDeviceUpdate(dto);
   }
 
+  @Public()
   @Post('progress')
   async reportProgress(@Body() dto: ProgressReportDto) {
     return this.updatesService.reportProgress(dto);

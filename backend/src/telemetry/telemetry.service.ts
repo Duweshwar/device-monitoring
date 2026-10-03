@@ -922,7 +922,7 @@ export class TelemetryService {
             timestamp: new Date(evt.timestamp).toLocaleString(),
             isStarred: false,
             isBlocked: false,
-            audioUrl: p.fileName ? `http://localhost:3000/uploads/recordings/${p.fileName}` : (p.filePath || '#')
+            audioUrl: p.fileName ? `/api/v1/media/stream/${p.fileName}` : (p.filePath || '#')
           };
         });
       }

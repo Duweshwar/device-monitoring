@@ -10,6 +10,7 @@ interface MainLayoutProps {
   activeTab: string;
   onSelectTab: (tabId: string) => void;
   onLogout?: () => void;
+  onUpgradeRequired?: (tier: string, featureName: string) => void;
   children: React.ReactNode;
 }
 
@@ -19,6 +20,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
   onSelectDevice,
   activeTab,
   onSelectTab,
+  onUpgradeRequired,
   children
 }) => {
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
@@ -32,6 +34,7 @@ export const MainLayout: React.FC<MainLayoutProps> = ({
         onSelectTab={onSelectTab}
         isCollapsed={isSidebarCollapsed}
         onToggleCollapse={() => setIsSidebarCollapsed(!isSidebarCollapsed)}
+        onUpgradeRequired={onUpgradeRequired}
       />
 
       {/* Main Workspace Area with Independent Content Scrolling */}

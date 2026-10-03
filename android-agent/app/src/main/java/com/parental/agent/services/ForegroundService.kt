@@ -45,6 +45,9 @@ class ForegroundService : Service() {
     override fun onCreate() {
         super.onCreate()
         Log.i(TAG, "ForegroundService created.")
+        val prefs = AppPreferences(this)
+        ApiConstants.setCustomBaseUrl(prefs.getServerBaseUrl())
+        com.parental.agent.data.remote.ApiClient.setCustomBaseUrl(prefs.getServerBaseUrl())
         createNotificationChannel()
         startForegroundServiceSafely()
         loadLocalPolicyRules()

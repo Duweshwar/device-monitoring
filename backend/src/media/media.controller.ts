@@ -7,15 +7,19 @@ import {
   Get, 
   Param, 
   Res, 
-  NotFoundException 
+  NotFoundException,
+  BadRequestException,
+  UseGuards
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { diskStorage } from 'multer';
-import { extname, join } from 'path';
+import { extname, join, basename } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 import { Response } from 'express';
 import { PrismaService } from '../prisma/prisma.service';
 import { PolicyService } from '../policy/policy.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Public } from '../auth/decorators/public.decorator';
 
 const uploadDir = join(process.cwd(), 'uploads', 'recordings');
 if (!existsSync(uploadDir)) {
@@ -27,6 +31,7 @@ const requestedFullPhotosStore = new Map<string, Set<string>>();
 // In-Memory map tracking statuses per requested photo: Map<deviceId, Map<filename, status>>
 const hdPhotoStatusStore = new Map<string, Map<string, string>>();
 
+@UseGuards(JwtAuthGuard)
 @Controller('media')
 export class MediaController {
   constructor(
@@ -34,6 +39,7 @@ export class MediaController {
     private readonly policyService: PolicyService
   ) {}
 
+  @Public()
   @Post('upload')
   @UseInterceptors(
     FileInterceptor('file', {
@@ -42,12 +48,14 @@ export class MediaController {
           cb(null, uploadDir);
         },
         filename: (req, file, cb) => {
-          const customName = req.body?.fileName;
-          if (customName) {
-            cb(null, customName);
+          const rawCustom = req.body?.fileName;
+          if (rawCustom) {
+            const cleanCustom = basename(rawCustom).replace(/[^a-zA-Z0-9._-]/g, '_');
+            cb(null, cleanCustom);
           } else {
             const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1e9);
-            cb(null, `${file.fieldname}-${uniqueSuffix}${extname(file.originalname)}`);
+            const safeField = basename(file.fieldname).replace(/[^a-zA-Z0-9._-]/g, '_');
+            cb(null, `${safeField}-${uniqueSuffix}${extname(file.originalname)}`);
           }
         },
       }),
@@ -83,7 +91,7 @@ export class MediaController {
           category,
           storageKey: file.filename,
           fileHash: body.originalSizeBytes ? `orig_${body.originalSizeBytes}` : file.filename,
-          fileSizeBytes: file.size, // Exact size of uploaded file!
+          fileSizeBytes: file.size,
           mimeType: file.mimetype || 'image/jpeg',
           timestamp: new Date()
         }
@@ -134,13 +142,19 @@ export class MediaController {
           };
         }),
       };
-    } catch (e) {
+    } catch {
       return { success: false, assets: [] };
     }
   }
 
+  @Public()
   @Get('stream/:filename')
-  async streamFile(@Param('filename') filename: string, @Res() res: Response) {
+  async streamFile(@Param('filename') rawFilename: string, @Res() res: Response) {
+    const filename = basename(rawFilename);
+    if (!filename || !/^[a-zA-Z0-9._-]+$/.test(filename)) {
+      throw new BadRequestException('Invalid media filename requested.');
+    }
+
     const filePath = join(uploadDir, filename);
     if (!existsSync(filePath)) {
       throw new NotFoundException('Media file not found on server.');
@@ -152,30 +166,36 @@ export class MediaController {
   async requestFullPhoto(
     @Body() payload: { deviceId: string; filename: string }
   ) {
+    const cleanFilename = basename(payload.filename || '');
+    if (!cleanFilename) {
+      throw new BadRequestException('Invalid photo filename.');
+    }
+
     let set = requestedFullPhotosStore.get(payload.deviceId);
     if (!set) {
       set = new Set();
       requestedFullPhotosStore.set(payload.deviceId, set);
     }
-    set.add(payload.filename);
+    set.add(cleanFilename);
 
     let statusMap = hdPhotoStatusStore.get(payload.deviceId);
     if (!statusMap) {
       statusMap = new Map();
       hdPhotoStatusStore.set(payload.deviceId, statusMap);
     }
-    statusMap.set(payload.filename, 'PENDING');
-    console.log(`[MediaController] HD photo request added for device ${payload.deviceId}: ${payload.filename}`);
+    statusMap.set(cleanFilename, 'PENDING');
+    console.log(`[MediaController] HD photo request added for device ${payload.deviceId}: ${cleanFilename}`);
 
     // Real-Time 0-Second Instant Push via SSE stream
-    this.policyService.emitMediaEvent(payload.deviceId, { filename: payload.filename });
+    this.policyService.emitMediaEvent(payload.deviceId, { filename: cleanFilename });
 
     return {
       success: true,
-      message: `Requested HD photo for ${payload.filename}. Android agent notified in real-time via SSE stream.`
+      message: `Requested HD photo for ${cleanFilename}. Android agent notified in real-time via SSE stream.`
     };
   }
 
+  @Public()
   @Get('pending-full-requests/:deviceId')
   async getPendingFullRequests(@Param('deviceId') deviceId: string) {
     const set = requestedFullPhotosStore.get(deviceId);
@@ -197,22 +217,24 @@ export class MediaController {
     return { success: true, statuses };
   }
 
+  @Public()
   @Post('full-photo-status')
   async updateFullPhotoStatus(@Body() body: { deviceId: string; filename: string; status: string }) {
     if (body.deviceId && body.filename) {
+      const cleanName = basename(body.filename);
       let statusMap = hdPhotoStatusStore.get(body.deviceId);
       if (!statusMap) {
         statusMap = new Map();
         hdPhotoStatusStore.set(body.deviceId, statusMap);
       }
-      statusMap.set(body.filename, body.status || 'NOT_FOUND');
+      statusMap.set(cleanName, body.status || 'NOT_FOUND');
 
       const set = requestedFullPhotosStore.get(body.deviceId);
       if (set) {
-        set.delete(body.filename);
-        const cleanName = body.filename.replace(/^full_/, '').replace(/^thumb_/, '');
+        set.delete(cleanName);
+        const base = cleanName.replace(/^full_/, '').replace(/^thumb_/, '');
         set.forEach((reqName) => {
-          if (reqName.includes(cleanName) || cleanName.includes(reqName)) {
+          if (reqName.includes(base) || base.includes(reqName)) {
             set.delete(reqName);
           }
         });

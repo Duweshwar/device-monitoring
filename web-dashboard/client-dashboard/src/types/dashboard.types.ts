@@ -13,6 +13,13 @@ export interface DeviceInfo {
   isOnline: boolean;
   lastConnected: string;
   appVersion: string;
+  planCode?: string;
+  planName?: string;
+  planBadge?: string | null;
+  features?: string[];
+  isLicenseActive?: boolean;
+  licenseExpiresAt?: string | null;
+  licenseKey?: string | null;
   capabilities: {
     accessibility: boolean;
     deviceOwner: boolean;

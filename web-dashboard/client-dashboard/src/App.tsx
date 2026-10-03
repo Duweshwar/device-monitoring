@@ -21,6 +21,7 @@ import { ScreenshotsPage } from './pages/ScreenshotsPage';
 import { LoginPage } from './pages/LoginPage';
 import { BuyNowPage } from './pages/BuyNowPage';
 import { NoLicenseModal } from './components/NoLicenseModal';
+import { UpgradePlanModal } from './components/UpgradePlanModal';
 import { DeviceInfo, MetricSummary, ActivityEvent } from './types/dashboard.types';
 import { apiService } from './services/apiService';
 import { Smartphone, PlusCircle, ShoppingCart, AlertTriangle, ShieldAlert, Key, BookOpen, X } from 'lucide-react';
@@ -48,9 +49,14 @@ export default function App() {
     }
   };
 
-  // Initialize auth state from localStorage to preserve session across page refreshes
+  // Initialize auth state strictly from valid localStorage token
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(() => {
-    return !!localStorage.getItem('childcare_auth_token');
+    const token = localStorage.getItem('childcare_auth_token');
+    if (!token || token === 'jwt_demo_token' || !token.includes('.')) {
+      localStorage.removeItem('childcare_auth_token');
+      return false;
+    }
+    return true;
   });
 
   const [availableDevices, setAvailableDevices] = useState<DeviceInfo[]>([]);
@@ -59,16 +65,63 @@ export default function App() {
   const [showNoLicenseModal, setShowNoLicenseModal] = useState<boolean>(false);
   const [isLicenseExpired, setIsLicenseExpired] = useState<boolean>(false);
   const [showGuideModal, setShowGuideModal] = useState<boolean>(false);
+  const [upgradeModalState, setUpgradeModalState] = useState<{
+    isOpen: boolean;
+    requiredTier: string;
+    featureName: string;
+  }>({
+    isOpen: false,
+    requiredTier: 'VIP',
+    featureName: '',
+  });
 
+  // Listen for unauthorized 401 events and redirect immediately to login
+  useEffect(() => {
+    const handleUnauthorized = () => {
+      console.warn('[App Auth] 401 Unauthorized detected. Redirecting to login.');
+      localStorage.removeItem('childcare_auth_token');
+      setIsAuthenticated(false);
+      navigate('/');
+    };
+
+    window.addEventListener('auth:unauthorized', handleUnauthorized);
+    return () => window.removeEventListener('auth:unauthorized', handleUnauthorized);
+  }, [navigate]);
+
+  // Validate active token on initial page load
+  useEffect(() => {
+    const token = localStorage.getItem('childcare_auth_token');
+    if (!token || token === 'jwt_demo_token' || !token.includes('.')) {
+      localStorage.removeItem('childcare_auth_token');
+      setIsAuthenticated(false);
+      return;
+    }
+
+    fetch('/api/v1/auth/me', {
+      headers: { 'Authorization': `Bearer ${token}` }
+    }).then(res => {
+      if (res.status === 401) {
+        console.warn('[App Auth] Session token is invalid or expired. Redirecting to login.');
+        localStorage.removeItem('childcare_auth_token');
+        setIsAuthenticated(false);
+      }
+    }).catch(() => {
+      // Quiet fail on network issues
+    });
+  }, []);
 
   const handleLoginSuccess = (user: any) => {
-    localStorage.setItem('childcare_auth_token', user?.token || 'true');
+    const token = user?.token || localStorage.getItem('childcare_auth_token');
+    if (token) {
+      localStorage.setItem('childcare_auth_token', token);
+    }
     setIsAuthenticated(true);
   };
 
   const handleLogout = () => {
     localStorage.removeItem('childcare_auth_token');
     setIsAuthenticated(false);
+    navigate('/');
   };
 
   // Live polling for ChildCare Licenses & Paired Devices from NestJS PostgreSQL backend
@@ -118,6 +171,13 @@ export default function App() {
               isOnline: d.isOnline ?? true,
               lastConnected: 'Just now',
               appVersion: d.appVersion || '8.2.0 - 220',
+              planCode: d.planCode || 'basic',
+              planName: d.planName || 'Basic Plan',
+              planBadge: d.planBadge || null,
+              features: d.features || ['calls', 'sms', 'contacts', 'location'],
+              isLicenseActive: d.isLicenseActive ?? true,
+              licenseExpiresAt: d.licenseExpiresAt || null,
+              licenseKey: d.licenseKey || null,
               capabilities: d.capabilities || {
                 accessibility: true,
                 deviceOwner: true,
@@ -127,9 +187,11 @@ export default function App() {
               }
             }));
             setAvailableDevices(formatted);
-            if (!currentDevice) {
-              setCurrentDevice(formatted[0]);
-            }
+            setCurrentDevice(prev => {
+              if (!prev) return formatted[0];
+              const match = formatted.find(f => f.id === prev.id);
+              return match || formatted[0];
+            });
           } else {
             setAvailableDevices([]);
             setCurrentDevice(null);
@@ -393,6 +455,13 @@ export default function App() {
       activeTab={activeTab}
       onSelectTab={(tabId) => handleSelectTab(tabId)}
       onLogout={handleLogout}
+      onUpgradeRequired={(tier, featureName) => {
+        setUpgradeModalState({
+          isOpen: true,
+          requiredTier: tier,
+          featureName,
+        });
+      }}
     >
       {/* License Expiration Banner Warning (hidden on Buy Now page) */}
       {isLicenseExpired && !isViewingBuyNow && (
@@ -416,6 +485,19 @@ export default function App() {
         onClose={() => setShowNoLicenseModal(false)}
         onNavigateToBuyNow={() => handleSelectTab('buynow')}
         onNavigateToPairing={() => handleSelectTab('devices')}
+      />
+
+      {/* Plan Tier Upgrade Modal */}
+      <UpgradePlanModal
+        isOpen={upgradeModalState.isOpen}
+        onClose={() => setUpgradeModalState(prev => ({ ...prev, isOpen: false }))}
+        requiredTier={upgradeModalState.requiredTier}
+        featureName={upgradeModalState.featureName}
+        currentDevice={activeDev}
+        onUpgradeToPlan={(_planCode) => {
+          setUpgradeModalState(prev => ({ ...prev, isOpen: false }));
+          handleSelectTab('buynow');
+        }}
       />
 
       {renderCurrentPage()}

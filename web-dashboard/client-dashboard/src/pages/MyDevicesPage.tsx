@@ -24,6 +24,7 @@ import {
   ShoppingCart
 } from 'lucide-react';
 import { DeviceInfo } from '../types/dashboard.types';
+import { apiService } from '../services/apiService';
 
 interface MyDevicesPageProps {
   availableDevices: DeviceInfo[];
@@ -333,19 +334,44 @@ export const MyDevicesPage: React.FC<MyDevicesPageProps> = ({
                     </div>
                   </div>
 
-                  {/* Dashboard Button */}
-                  <div className="shrink-0 flex flex-col items-center justify-center gap-0.5 border-t md:border-t-0 border-slate-100 pt-2 md:pt-0 w-full md:w-auto">
+                  {/* Dashboard & Device Actions Button */}
+                  <div className="shrink-0 flex items-center gap-2 border-t md:border-t-0 border-slate-100 pt-2 md:pt-0 w-full md:w-auto justify-end">
+                    {/* Unlink / Transfer License Button */}
+                    <button
+                      onClick={async () => {
+                        const matchedLicense = userLicenses.find(l => l.assignedDeviceId === dev.id || l.assignedDevice?.id === dev.id);
+                        if (!matchedLicense) {
+                          alert('No active license found attached to this device.');
+                          return;
+                        }
+                        if (confirm(`Are you sure you want to unlink License "${matchedLicense.licenseKey}" from ${dev.alias}? You will be able to reuse this license on a new target device.`)) {
+                          const res = await apiService.unlinkLicense(matchedLicense.licenseKey);
+                          if (res.success) {
+                            alert('License unlinked successfully! You can now activate it on a new device.');
+                            window.location.reload();
+                          } else {
+                            alert(res.message || 'Failed to unlink license.');
+                          }
+                        }
+                      }}
+                      className="px-3 py-2.5 rounded-xl border border-rose-200 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold transition-all flex items-center gap-1.5"
+                      title="Unlink License and move to new phone (Unlimited Device Change)"
+                    >
+                      <ArrowRightLeft className="w-4 h-4" />
+                      <span>Unlink Device</span>
+                    </button>
+
                     <button
                       onClick={() => {
                         onSelectDevice(dev);
                         onNavigateTab('dashboard');
                       }}
-                      className="p-3 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-all flex items-center justify-center"
+                      className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs transition-all flex items-center gap-1.5 text-xs font-bold"
                       title="Open Telemetry Dashboard"
                     >
-                      <BarChart2 className="w-5 h-5" />
+                      <BarChart2 className="w-4 h-4" />
+                      <span>Dashboard</span>
                     </button>
-                    <span className="text-[11px] font-bold text-indigo-900">Dashboard</span>
                   </div>
 
                 </div>

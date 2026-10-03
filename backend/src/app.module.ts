@@ -9,6 +9,8 @@ import { PolicyModule } from './policy/policy.module';
 import { CommandsModule } from './commands/commands.module';
 import { LicensesModule } from './licenses/licenses.module';
 import { MediaModule } from './media/media.module';
+import { PlansModule } from './plans/plans.module';
+import { PaymentsModule } from './payments/payments.module';
 
 @Module({
   imports: [
@@ -24,6 +26,8 @@ import { MediaModule } from './media/media.module';
     CommandsModule,
     LicensesModule,
     MediaModule,
+    PlansModule,
+    PaymentsModule,
   ],
   controllers: [],
   providers: [],

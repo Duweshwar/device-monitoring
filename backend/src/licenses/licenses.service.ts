@@ -13,12 +13,8 @@ export interface ActivateLicenseDto {
   sdkInt?: number;
 }
 
-export interface PurchaseSimulateDto {
-  email: string;
-  name?: string;
-  packageName: string;
-  months: number;
-  amount: number;
+export interface UnlinkLicenseDto {
+  licenseKey: string;
 }
 
 @Injectable()
@@ -64,60 +60,40 @@ export class LicensesService {
     return [];
   }
 
-  // 2. Simulate Checkout Payment & Provision New License in PostgreSQL DB
-  async simulatePurchase(dto: PurchaseSimulateDto) {
-    const cleanEmail = (dto.email || 'parent@gmail.com').toLowerCase();
-
-    // Find or create parent user in PostgreSQL
-    let user = await this.prisma.user.findUnique({
-      where: { email: cleanEmail }
+  // 2. Unlink License from Device (Unlimited Device Change / Transfer)
+  async unlinkLicense(licenseKey: string) {
+    const cleanKey = licenseKey.trim().toUpperCase();
+    const license = await this.prisma.license.findUnique({
+      where: { licenseKey: cleanKey },
+      include: { assignedDevice: true },
     }).catch(() => null);
 
-    if (!user) {
-      user = await this.prisma.user.create({
-        data: {
-          email: cleanEmail,
-          passwordHash: 'hashed_12345678',
-          name: dto.name || 'ChildCare Parent',
-          accountType: 'PARENT',
-          roles: ['FAMILY_PARENT']
-        }
+    if (!license) {
+      throw new NotFoundException('License not found.');
+    }
+
+    const previousDeviceId = license.assignedDeviceId;
+
+    await this.prisma.license.update({
+      where: { id: license.id },
+      data: {
+        status: 'UNASSIGNED',
+        assignedDeviceId: null,
+      },
+    });
+
+    if (previousDeviceId) {
+      await this.prisma.device.update({
+        where: { id: previousDeviceId },
+        data: { isPaired: false },
       }).catch(() => null);
     }
 
-    const licenseKey = `LIC-2026-${Math.floor(100000 + Math.random() * 900000)}`;
-    const expiresAt = new Date(Date.now() + (dto.months || 12) * 30 * 24 * 60 * 60 * 1000);
-
-    try {
-      const license = await this.prisma.license.create({
-        data: {
-          licenseKey,
-          planName: `ChildCare ${dto.packageName || 'Premium'} (${dto.months || 12} Months)`,
-          userId: user?.id || 'usr_demo',
-          status: 'UNASSIGNED',
-          expiresAt
-        }
-      });
-
-      console.log(`[PostgreSQL DB] Provisioned new License ${licenseKey} for User ${cleanEmail}`);
-
-      return {
-        success: true,
-        message: 'Payment Simulated Successfully! License Provisioned in DB.',
-        licenseKey: license.licenseKey,
-        planName: license.planName,
-        expiresAt: license.expiresAt
-      };
-    } catch (err) {
-      console.warn('[LicensesService] License provisioning fallback:', err);
-      return {
-        success: true,
-        message: 'Payment Simulated Successfully!',
-        licenseKey,
-        planName: `ChildCare ${dto.packageName || 'Premium'} (${dto.months || 12} Months)`,
-        expiresAt
-      };
-    }
+    return {
+      success: true,
+      message: 'License successfully unlinked. You can now re-link this license to a new target device.',
+      licenseKey: cleanKey,
+    };
   }
 
   // 3. Activate License Key on Target Android Device
@@ -193,6 +169,63 @@ export class LicensesService {
       deviceId: device.id,
       licenseKey: cleanKey,
       planName: license.planName
+    };
+  }
+
+  // 4. Inspect License Key Details (Preview before activation on Android Agent)
+  async inspectLicense(licenseKey: string) {
+    if (!licenseKey) {
+      throw new BadRequestException('License Key is required.');
+    }
+
+    const cleanKey = licenseKey.trim().toUpperCase();
+
+    const license = await this.prisma.license.findUnique({
+      where: { licenseKey: cleanKey },
+      include: {
+        user: {
+          include: {
+            paymentOrders: {
+              orderBy: { createdAt: 'desc' },
+              take: 1,
+            },
+          },
+        },
+        assignedDevice: true,
+      },
+    }).catch(() => null);
+
+    if (!license) {
+      throw new NotFoundException(`License "${cleanKey}" not found. Please verify the key or purchase a subscription.`);
+    }
+
+    const latestOrder = license.user?.paymentOrders?.[0];
+    const isExpired = new Date(license.expiresAt).getTime() < Date.now() || license.status === 'EXPIRED';
+    const isAlreadyAssigned = Boolean(license.assignedDeviceId && license.status === 'ACTIVE');
+
+    const planCode = (license.planCode || 'basic').trim().toLowerCase();
+    const tier = await this.prisma.planTier.findUnique({
+      where: { code: planCode },
+    }).catch(() => null);
+
+    return {
+      success: true,
+      licenseKey: license.licenseKey,
+      planName: license.planName,
+      planCode,
+      planBadge: tier?.badge || null,
+      status: license.status,
+      expiresAt: license.expiresAt,
+      isExpired,
+      isAlreadyAssigned,
+      assignedDeviceName: license.assignedDevice?.name || null,
+      assignedDeviceId: license.assignedDeviceId || null,
+      features: (tier?.features as string[]) || [],
+      owner: {
+        name: license.user?.name || latestOrder?.customerName || 'Registered Parent',
+        email: license.user?.email || latestOrder?.customerEmail || 'N/A',
+        phone: latestOrder?.customerPhone || 'N/A',
+      },
     };
   }
 }

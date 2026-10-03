@@ -113,6 +113,15 @@ class AppPreferences(context: Context) {
         sharedPreferences.edit().putStringSet(KEY_BLOCKED_DOMAINS, domains).apply()
     }
 
+    fun getServerBaseUrl(): String {
+        return sharedPreferences.getString(KEY_SERVER_URL, "http://10.0.2.2:3000") ?: "http://10.0.2.2:3000"
+    }
+
+    fun setServerBaseUrl(url: String) {
+        val clean = url.trim().removeSuffix("/")
+        sharedPreferences.edit().putString(KEY_SERVER_URL, clean).apply()
+    }
+
     companion object {
         private const val KEY_DEVICE_ID = "key_device_id"
         private const val KEY_TERMS_ACCEPTED = "key_terms_accepted"
@@ -125,5 +134,6 @@ class AppPreferences(context: Context) {
         private const val KEY_BLOCKED_APPS = "key_blocked_apps"
         private const val KEY_BLOCKED_NUMBERS = "key_blocked_numbers"
         private const val KEY_BLOCKED_DOMAINS = "key_blocked_domains"
+        private const val KEY_SERVER_URL = "key_server_url"
     }
 }

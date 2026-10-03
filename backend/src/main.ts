@@ -18,6 +18,14 @@ async function bootstrap() {
     credentials: true,
   });
 
+  // Seamless URL rewrite middleware: normalize /api/* to /api/v1/* for legacy or retrofitted agent calls
+  app.use((req: any, res: any, next: () => void) => {
+    if (req.url && req.url.startsWith('/api/') && !req.url.startsWith('/api/v1/')) {
+      req.url = req.url.replace('/api/', '/api/v1/');
+    }
+    next();
+  });
+
   app.useGlobalPipes(
     new ValidationPipe({
       whitelist: true,

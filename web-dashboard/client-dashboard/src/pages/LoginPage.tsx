@@ -36,18 +36,16 @@ export const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
       const data = await res.json();
       if (res.ok && data.success) {
-        onLoginSuccess(data.user || { email, name: name || 'Parent User' });
-      } else {
-        // Fallback demo login for fast local testing
-        if (email === 'parent@gmail.com' || email.includes('@')) {
-          onLoginSuccess({ email, name: name || 'Parent User' });
-        } else {
-          setErrorMessage(data.message || 'Invalid credentials. Please check your email and password.');
+        const token = data.token || data.user?.token;
+        if (token) {
+          localStorage.setItem('childcare_auth_token', token);
         }
+        onLoginSuccess({ ...(data.user || { email, name: name || 'Parent User' }), token });
+      } else {
+        setErrorMessage(data.message || 'Invalid credentials. Please check your email and password.');
       }
     } catch (err) {
-      // Direct local login fallback
-      onLoginSuccess({ email, name: name || 'Parent User' });
+      setErrorMessage('Failed to connect to authentication server. Please check your network.');
     } finally {
       setIsLoading(false);
     }

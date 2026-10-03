@@ -27,19 +27,8 @@ export interface ProgressReportDto {
 export class UpdatesService {
   constructor(@Optional() private readonly policyService?: PolicyService) {}
 
-  // In-Memory store fallback for demo & dev environment
-  private releases = [
-    {
-      id: 'rel_v820',
-      versionCode: 220,
-      versionName: 'v8.2.0',
-      apkUrl: 'https://cdn.parantelguard.com/apk/agent-v8.2.0.apk',
-      sha256: 'e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855',
-      isMandatory: false,
-      releaseNotes: 'Call Recording separation, location triangulation enhancement, memory optimization.',
-      createdAt: new Date()
-    }
-  ];
+  // Real releases store managed by Super Admin uploads
+  private releases: any[] = [];
 
   private updateJobs = new Map<string, any>();
 
